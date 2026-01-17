@@ -1,9 +1,12 @@
 [package]
-name = "vims"
+name = "judge"
 version = "0.1.0"
 edition = "2021"
 description = "Tekne L4: Unified Evaluation and Statistical Judgment"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/arclabs561/judge"
+homepage = "https://github.com/arclabs561/judge"
+documentation = "https://docs.rs/judge"
 publish = false
 
 [dependencies]
