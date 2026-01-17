@@ -1,6 +1,5 @@
-# merit
+# weigh
 
-Unified evaluation: audit, judge, metrics.
+Tekne L4: Unified Evaluation and Statistical Judgment.
 
-(merit: quality of being particularly good or worthy)
-
+This layer provides the statistical mirror for the stack, verifying performance through rigorous metrics like nDCG, F1, and confidence intervals.
