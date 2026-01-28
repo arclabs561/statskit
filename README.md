@@ -1,3 +1,3 @@
-# weigh
+# statskit
 
-Statistical judgment and evaluation (Tekne L4).
+Statistical judgment and evaluation.

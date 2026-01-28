@@ -1,9 +1,21 @@
-//! # weigh
+//! # statskit
 //!
-//! Tekne L4: Statistical Judgment and Evaluation.
+//! Statistical judgment and evaluation.
 //!
-//! This layer provides the statistical mirror for the stack, verifying performance
-//! through rigorous metrics and confidence intervals.
+//! This layer is the statistical mirror for the stack: turn “it seems better” into
+//! “it is better, under a stated metric, with uncertainty quantified.”
+//!
+//! ## Contract
+//!
+//! - **No metric without a use case**: add a metric only when it is used downstream and has tests.
+//! - **Uncertainty is part of the API**: when a function makes a statistical claim (CI, p-value),
+//!   the assumptions must be spelled out in the rustdoc.
+//! - **Small surface**: prefer a narrow set of well-specified primitives over a grab-bag.
+//!
+//! ## What’s here (today)
+//!
+//! - `stats`: small helpers (mean, moments, etc.)
+//! - `metrics`: evaluation metrics (currently minimal; grows with usage)
 
 pub mod metrics;
 pub mod stats;
