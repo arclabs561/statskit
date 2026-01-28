@@ -6,7 +6,11 @@ description = "Statistical judgment and evaluation primitives"
 license = "MIT OR Apache-2.0"
 publish = true
 repository = "https://github.com/arclabs561/statskit"
+homepage = "https://github.com/arclabs561/statskit"
 documentation = "https://docs.rs/statskit"
+readme = "README.md"
+keywords = ["statistics", "evaluation", "metrics"]
+categories = ["science", "mathematics"]
 
 [dependencies]
 serde = { workspace = true, optional = true }
