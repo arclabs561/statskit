@@ -13,12 +13,4 @@ keywords = ["statistics", "evaluation", "metrics"]
 categories = ["science", "mathematics"]
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"], optional = true }
-serde_json = { version = "1.0", optional = true }
-thiserror = "2.0"
-innr = { version = "0.1.0", optional = true }
-
-[features]
-default = ["std"]
-std = []
-serde = ["dep:serde", "dep:serde_json"]
+# (intentionally none; keep this crate dependency-light)
