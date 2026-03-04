@@ -81,12 +81,7 @@ mod tests {
     fn variance_is_stable_under_large_offsets() {
         // A dataset with large mean and small variance (relative scale).
         // We choose increments that are representable at this magnitude.
-        let xs = [
-            1e16_f64,
-            1e16_f64 + 2.0,
-            1e16_f64 + 4.0,
-            1e16_f64 + 6.0,
-        ];
+        let xs = [1e16_f64, 1e16_f64 + 2.0, 1e16_f64 + 4.0, 1e16_f64 + 6.0];
         let vp = variance_population(&xs).unwrap();
         // Variance of [0,2,4,6] is 5.0 (population).
         assert!((vp - 5.0).abs() < 1e-9, "vp={vp}");
