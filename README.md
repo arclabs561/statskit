@@ -1,5 +1,9 @@
 # statskit
 
+[![crates.io](https://img.shields.io/crates/v/statskit.svg)](https://crates.io/crates/statskit)
+[![Documentation](https://docs.rs/statskit/badge.svg)](https://docs.rs/statskit)
+[![CI](https://github.com/arclabs561/statskit/actions/workflows/ci.yml/badge.svg)](https://github.com/arclabs561/statskit/actions/workflows/ci.yml)
+
 Statistical judgment and evaluation primitives (metrics + small stats helpers).
 
 ## Quickstart
