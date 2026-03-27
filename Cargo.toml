@@ -1,16 +1,21 @@
 [package]
 name = "statskit"
 version = "0.1.0"
-edition = "2021"
-description = "Statistical judgment and evaluation primitives"
+edition = "2024"
+rust-version = "1.85"
+description = "Statistical judgment and evaluation: classification metrics, calibration, bootstrap, and system comparison"
 license = "MIT OR Apache-2.0"
-publish = false
 repository = "https://github.com/arclabs561/statskit"
 homepage = "https://github.com/arclabs561/statskit"
 documentation = "https://github.com/arclabs561/statskit#readme"
 readme = "README.md"
-keywords = ["statistics", "evaluation", "metrics"]
+keywords = ["statistics", "evaluation", "metrics", "classification", "bootstrap"]
 categories = ["science", "mathematics"]
 
 [dependencies]
-# (intentionally none; keep this crate dependency-light)
+rand = "0.9"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"], optional = true }
+
+[features]
+serde = ["dep:serde"]
