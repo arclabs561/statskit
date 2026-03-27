@@ -67,6 +67,20 @@ pub fn reliability_diagram(y_true: &[usize], y_prob: &[f64], n_bins: usize) -> V
         .collect()
 }
 
+/// Maximum Calibration Error: worst-case bin calibration gap.
+///
+/// Same binning as ECE, but takes the max gap instead of the weighted average.
+pub fn maximum_calibration_error(y_true: &[usize], y_prob: &[f64], n_bins: usize) -> f64 {
+    assert_eq!(y_true.len(), y_prob.len(), "length mismatch");
+    if y_true.is_empty() || n_bins == 0 {
+        return 0.0;
+    }
+    let bins = reliability_diagram(y_true, y_prob, n_bins);
+    bins.iter()
+        .map(|b| (b.fraction_positive - b.mean_predicted).abs())
+        .fold(0.0_f64, f64::max)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,6 +108,25 @@ mod tests {
         let y_prob = [0.0, 0.0, 1.0, 1.0];
         let ece = expected_calibration_error(&y_true, &y_prob, 10);
         assert!((ece - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_mce_perfectly_calibrated() {
+        let y_true = [0, 0, 1, 1];
+        let y_prob = [0.0, 0.0, 1.0, 1.0];
+        let mce = maximum_calibration_error(&y_true, &y_prob, 10);
+        assert!((mce - 0.0).abs() < 1e-10, "expected 0, got {mce}");
+    }
+
+    #[test]
+    fn test_mce_worst_bin() {
+        // Bin near 0.8: predictions ~0.8, all actually negative -> gap = 0.8
+        // Bin near 0.1: predictions ~0.1, all actually positive -> gap = 0.9
+        // MCE should pick the worst bin
+        let y_true = [1, 1, 0, 0];
+        let y_prob = [0.1, 0.15, 0.8, 0.85];
+        let mce = maximum_calibration_error(&y_true, &y_prob, 10);
+        assert!(mce > 0.5, "expected large MCE, got {mce}");
     }
 
     #[test]

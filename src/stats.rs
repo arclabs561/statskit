@@ -507,6 +507,242 @@ pub fn mean_diff(a: &[f64], b: &[f64]) -> f64 {
 }
 
 // ---------------------------------------------------------------------------
+// McNemar, Friedman, Mann-Whitney tests
+// ---------------------------------------------------------------------------
+
+/// Result of a McNemar test.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct McNemarResult {
+    pub statistic: f64,
+    pub p_value: f64,
+    pub significant: bool,
+    /// Count where A correct, B incorrect.
+    pub b: usize,
+    /// Count where A incorrect, B correct.
+    pub c: usize,
+}
+
+/// McNemar's test for comparing two classifiers on the same test set.
+///
+/// Uses continuity-corrected chi-squared statistic: `(|b - c| - 1)^2 / (b + c)`.
+/// p-value from chi-squared distribution with 1 df (normal approximation).
+pub fn mcnemar(y_true: &[usize], pred_a: &[usize], pred_b: &[usize], alpha: f64) -> McNemarResult {
+    assert_eq!(y_true.len(), pred_a.len(), "length mismatch");
+    assert_eq!(y_true.len(), pred_b.len(), "length mismatch");
+
+    let mut b = 0usize; // A correct, B wrong
+    let mut c = 0usize; // A wrong, B correct
+
+    for i in 0..y_true.len() {
+        let a_correct = pred_a[i] == y_true[i];
+        let b_correct = pred_b[i] == y_true[i];
+        if a_correct && !b_correct {
+            b += 1;
+        } else if !a_correct && b_correct {
+            c += 1;
+        }
+    }
+
+    if b + c == 0 {
+        return McNemarResult {
+            statistic: 0.0,
+            p_value: 1.0,
+            significant: false,
+            b,
+            c,
+        };
+    }
+
+    let diff = (b as f64 - c as f64).abs() - 1.0;
+    let statistic = if diff > 0.0 {
+        diff * diff / (b + c) as f64
+    } else {
+        0.0
+    };
+
+    // p-value from chi-squared(1) via normal approximation: chi2(1) = z^2
+    let z = statistic.sqrt();
+    let p_value = 2.0 * (1.0 - normal_cdf(z));
+
+    McNemarResult {
+        statistic,
+        p_value,
+        significant: p_value < alpha,
+        b,
+        c,
+    }
+}
+
+/// Result of a Friedman test.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct FriedmanResult {
+    pub statistic: f64,
+    pub p_value: f64,
+    pub significant: bool,
+    /// Number of systems.
+    pub k: usize,
+    /// Number of datasets/queries.
+    pub n: usize,
+}
+
+/// Friedman test for comparing k >= 3 systems across n datasets.
+///
+/// `scores[i][j]` = score of system i on dataset j. All inner slices must
+/// have the same length n. Ranks each column independently, computes
+/// chi-squared statistic from rank sums. p-value from chi-squared with k-1 df
+/// (normal approximation via Wilson-Hilferty).
+pub fn friedman(scores: &[&[f64]], alpha: f64) -> FriedmanResult {
+    let k = scores.len();
+    assert!(k >= 2, "need at least 2 systems");
+    let n = scores[0].len();
+    for s in scores {
+        assert_eq!(s.len(), n, "all systems must have same number of datasets");
+    }
+    assert!(n > 0, "empty input");
+
+    // Rank each column (dataset) independently
+    let mut rank_sums = vec![0.0_f64; k];
+
+    #[allow(clippy::needless_range_loop)]
+    for col_idx in 0..n {
+        let mut col: Vec<(usize, f64)> = (0..k).map(|i| (i, scores[i][col_idx])).collect();
+        col.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+        let mut ranks = vec![0.0_f64; k];
+        let mut i = 0;
+        while i < k {
+            let mut end = i;
+            while end < k && (col[end].1 - col[i].1).abs() < 1e-15 {
+                end += 1;
+            }
+            let avg_rank = (i + 1 + end) as f64 / 2.0;
+            for idx in i..end {
+                ranks[col[idx].0] = avg_rank;
+            }
+            i = end;
+        }
+
+        for (sys, &r) in ranks.iter().enumerate() {
+            rank_sums[sys] += r;
+        }
+    }
+
+    let k_f = k as f64;
+    let n_f = n as f64;
+    let mean_rank = (k_f + 1.0) / 2.0;
+
+    let ss: f64 = rank_sums
+        .iter()
+        .map(|&rs| {
+            let diff = rs / n_f - mean_rank;
+            diff * diff
+        })
+        .sum();
+
+    let statistic = 12.0 * n_f / (k_f * (k_f + 1.0)) * ss;
+
+    // p-value from chi-squared with k-1 df using Wilson-Hilferty approximation
+    let df = k_f - 1.0;
+    let p_value = chi2_survival(statistic, df);
+
+    FriedmanResult {
+        statistic,
+        p_value,
+        significant: p_value < alpha,
+        k,
+        n,
+    }
+}
+
+/// Result of a Mann-Whitney U test.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct MannWhitneyResult {
+    pub statistic: f64,
+    pub p_value: f64,
+    pub significant: bool,
+}
+
+/// Mann-Whitney U test for comparing two independent groups.
+///
+/// Uses normal approximation for the p-value.
+pub fn mann_whitney(a: &[f64], b: &[f64], alpha: f64) -> MannWhitneyResult {
+    let n_a = a.len();
+    let n_b = b.len();
+    if n_a == 0 || n_b == 0 {
+        return MannWhitneyResult {
+            statistic: 0.0,
+            p_value: 1.0,
+            significant: false,
+        };
+    }
+
+    // Combine and rank
+    let mut combined: Vec<(f64, usize)> = Vec::with_capacity(n_a + n_b);
+    for &v in a {
+        combined.push((v, 0)); // group 0 = a
+    }
+    for &v in b {
+        combined.push((v, 1)); // group 1 = b
+    }
+    combined.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap());
+
+    let n = combined.len();
+    let mut ranks = vec![0.0_f64; n];
+    let mut i = 0;
+    while i < n {
+        let mut j = i;
+        while j < n && (combined[j].0 - combined[i].0).abs() < 1e-15 {
+            j += 1;
+        }
+        let avg_rank = (i + 1 + j) as f64 / 2.0;
+        for rank in &mut ranks[i..j] {
+            *rank = avg_rank;
+        }
+        i = j;
+    }
+
+    let rank_sum_a: f64 = ranks
+        .iter()
+        .zip(combined.iter())
+        .filter(|(_, c)| c.1 == 0)
+        .map(|(r, _)| *r)
+        .sum();
+
+    let u_a = rank_sum_a - (n_a as f64 * (n_a as f64 + 1.0)) / 2.0;
+    let u_b = (n_a as f64) * (n_b as f64) - u_a;
+    let u = u_a.min(u_b);
+
+    let mean_u = (n_a as f64 * n_b as f64) / 2.0;
+    let var_u = (n_a as f64 * n_b as f64 * (n_a as f64 + n_b as f64 + 1.0)) / 12.0;
+
+    let z = if var_u > 0.0 {
+        (u - mean_u).abs() / var_u.sqrt()
+    } else {
+        0.0
+    };
+    let p_value = 2.0 * (1.0 - normal_cdf(z));
+
+    MannWhitneyResult {
+        statistic: u,
+        p_value,
+        significant: p_value < alpha,
+    }
+}
+
+/// Survival function of chi-squared distribution (Wilson-Hilferty approximation).
+fn chi2_survival(x: f64, df: f64) -> f64 {
+    if df <= 0.0 || x <= 0.0 {
+        return 1.0;
+    }
+    // Wilson-Hilferty: transform chi2 to approximate normal
+    let z = ((x / df).powf(1.0 / 3.0) - (1.0 - 2.0 / (9.0 * df))) / (2.0 / (9.0 * df)).sqrt();
+    1.0 - normal_cdf(z)
+}
+
+// ---------------------------------------------------------------------------
 // Normal distribution helpers (no external dependency)
 // ---------------------------------------------------------------------------
 
@@ -717,6 +953,63 @@ mod tests {
         let b = [0.5, 0.45, 0.48, 0.52, 0.47, 0.51, 0.46, 0.49];
         let eps = aso(&a, &b, 1000, Some(42));
         assert!(eps < 0.5, "eps = {eps}");
+    }
+
+    #[test]
+    fn test_mcnemar_identical() {
+        let y_true = [0, 0, 1, 1, 0, 1, 0, 1];
+        let pred_a = [0, 1, 1, 0, 0, 1, 0, 1];
+        let pred_b = [0, 1, 1, 0, 0, 1, 0, 1]; // same as A
+        let result = mcnemar(&y_true, &pred_a, &pred_b, 0.05);
+        assert!(!result.significant, "p={}", result.p_value);
+        assert_eq!(result.b, 0);
+        assert_eq!(result.c, 0);
+    }
+
+    #[test]
+    fn test_mcnemar_different() {
+        // A is much better than B
+        let y_true: Vec<usize> = (0..100).map(|i| i % 2).collect();
+        let pred_a = y_true.clone(); // A is perfect
+        let pred_b: Vec<usize> = (0..100).map(|i| (i + 1) % 2).collect(); // B is all wrong
+        let result = mcnemar(&y_true, &pred_a, &pred_b, 0.05);
+        assert!(result.significant, "p={}", result.p_value);
+    }
+
+    #[test]
+    fn test_friedman_identical() {
+        // All systems have identical scores
+        let s1 = [0.8, 0.7, 0.9, 0.6, 0.85];
+        let s2 = [0.8, 0.7, 0.9, 0.6, 0.85];
+        let s3 = [0.8, 0.7, 0.9, 0.6, 0.85];
+        let result = friedman(&[&s1, &s2, &s3], 0.05);
+        assert!(!result.significant, "p={}", result.p_value);
+    }
+
+    #[test]
+    fn test_friedman_different() {
+        // System A clearly best, B medium, C worst across all datasets
+        let s1 = [0.95, 0.93, 0.97, 0.91, 0.96, 0.94, 0.92, 0.98];
+        let s2 = [0.70, 0.68, 0.72, 0.66, 0.71, 0.69, 0.67, 0.73];
+        let s3 = [0.40, 0.38, 0.42, 0.36, 0.41, 0.39, 0.37, 0.43];
+        let result = friedman(&[&s1, &s2, &s3], 0.05);
+        assert!(result.significant, "p={}", result.p_value);
+    }
+
+    #[test]
+    fn test_mann_whitney_identical() {
+        let a = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let b = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let result = mann_whitney(&a, &b, 0.05);
+        assert!(!result.significant, "p={}", result.p_value);
+    }
+
+    #[test]
+    fn test_mann_whitney_different() {
+        let a: Vec<f64> = (100..130).map(|i| i as f64).collect();
+        let b: Vec<f64> = (0..30).map(|i| i as f64).collect();
+        let result = mann_whitney(&a, &b, 0.05);
+        assert!(result.significant, "p={}", result.p_value);
     }
 
     #[test]

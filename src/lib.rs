@@ -17,15 +17,19 @@
 //! - `stats`: descriptive statistics (mean, variance, stddev) and statistical tests
 //!   (bootstrap BCa, Wilcoxon, permutation, ASO, multiple-comparison corrections, effect sizes)
 //! - `classify`: classification metrics (precision, recall, F1, MCC, ROC-AUC, PR-AUC,
-//!   confusion matrix, classification report)
-//! - `calibration`: calibration metrics (Brier score, ECE, reliability diagram)
+//!   confusion matrix, classification report, log loss, balanced accuracy, specificity,
+//!   Cohen's kappa, Hamming loss, Jaccard score)
+//! - `calibration`: calibration metrics (Brier score, ECE, MCE, reliability diagram)
+//! - `regression`: regression metrics (MSE, RMSE, MAE, R-squared)
 
 #![forbid(unsafe_code)]
 
 pub mod calibration;
 pub mod classify;
+pub mod regression;
 pub mod stats;
 
 pub use calibration::*;
 pub use classify::*;
+pub use regression::*;
 pub use stats::*;

@@ -370,6 +370,126 @@ pub fn classification_report(
     }
 }
 
+/// Log loss (cross-entropy). Lower is better.
+/// `y_true`: binary labels (0 or 1), `y_prob`: predicted probabilities.
+/// Clips probabilities to `[1e-15, 1-1e-15]` to avoid `log(0)`.
+pub fn log_loss(y_true: &[usize], y_prob: &[f64]) -> f64 {
+    assert_eq!(y_true.len(), y_prob.len(), "length mismatch");
+    if y_true.is_empty() {
+        return 0.0;
+    }
+    let eps = 1e-15;
+    let n = y_true.len() as f64;
+    let sum: f64 = y_true
+        .iter()
+        .zip(y_prob.iter())
+        .map(|(&y, &p)| {
+            let p = p.clamp(eps, 1.0 - eps);
+            let y = y as f64;
+            -(y * p.ln() + (1.0 - y) * (1.0 - p).ln())
+        })
+        .sum();
+    sum / n
+}
+
+/// Balanced accuracy: average of per-class recall.
+pub fn balanced_accuracy(y_true: &[usize], y_pred: &[usize]) -> f64 {
+    if y_true.is_empty() {
+        return 0.0;
+    }
+    let n_classes = n_classes_from(y_true, y_pred);
+    let cm = confusion_matrix(y_true, y_pred, n_classes);
+    let stats = per_class_tp_fp_fn(&cm, n_classes);
+    let sum_recall: f64 = stats
+        .iter()
+        .map(|&(tp, _fp, fn_)| {
+            if tp + fn_ == 0 {
+                0.0
+            } else {
+                tp as f64 / (tp + fn_) as f64
+            }
+        })
+        .sum();
+    sum_recall / n_classes as f64
+}
+
+/// Specificity (true negative rate) for binary classification.
+pub fn specificity(y_true: &[usize], y_pred: &[usize]) -> f64 {
+    if y_true.is_empty() {
+        return 0.0;
+    }
+    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
+    let mut tn = 0u64;
+    let mut fp = 0u64;
+    for (&t, &p) in y_true.iter().zip(y_pred.iter()) {
+        if t == 0 && p == 0 {
+            tn += 1;
+        } else if t == 0 && p != 0 {
+            fp += 1;
+        }
+    }
+    if tn + fp == 0 {
+        return 0.0;
+    }
+    tn as f64 / (tn + fp) as f64
+}
+
+/// Cohen's kappa coefficient. Measures agreement corrected for chance.
+/// Range: -1 to 1. 1 = perfect, 0 = chance, negative = worse than chance.
+pub fn cohen_kappa(y_true: &[usize], y_pred: &[usize]) -> f64 {
+    if y_true.is_empty() {
+        return 0.0;
+    }
+    let n_classes = n_classes_from(y_true, y_pred);
+    let cm = confusion_matrix(y_true, y_pred, n_classes);
+    let n = y_true.len() as f64;
+
+    // Observed agreement
+    let p_o: f64 = (0..n_classes).map(|k| cm[k][k] as f64).sum::<f64>() / n;
+
+    // Expected agreement by chance
+    let p_e: f64 = (0..n_classes)
+        .map(|k| {
+            let row_sum: f64 = cm[k].iter().sum::<u64>() as f64;
+            let col_sum: f64 = (0..n_classes).map(|r| cm[r][k] as f64).sum();
+            (row_sum * col_sum) / (n * n)
+        })
+        .sum();
+
+    if (1.0 - p_e).abs() < 1e-15 {
+        return 0.0;
+    }
+    (p_o - p_e) / (1.0 - p_e)
+}
+
+/// Hamming loss: fraction of labels that are incorrectly predicted.
+/// For single-label: equals `1 - accuracy`.
+pub fn hamming_loss(y_true: &[usize], y_pred: &[usize]) -> f64 {
+    if y_true.is_empty() {
+        return 0.0;
+    }
+    1.0 - accuracy(y_true, y_pred)
+}
+
+/// Jaccard similarity coefficient (IoU) with the given averaging strategy.
+pub fn jaccard_score(y_true: &[usize], y_pred: &[usize], average: Average) -> f64 {
+    if y_true.is_empty() {
+        return 0.0;
+    }
+    let n_classes = n_classes_from(y_true, y_pred);
+    let cm = confusion_matrix(y_true, y_pred, n_classes);
+    let stats = per_class_tp_fp_fn(&cm, n_classes);
+    let supports = support_per_class(&cm, n_classes);
+    compute_averaged(&stats, &supports, average, |tp, fp, fn_| {
+        let denom = tp + fp + fn_;
+        if denom == 0 {
+            0.0
+        } else {
+            tp as f64 / denom as f64
+        }
+    })
+}
+
 fn n_classes_from(y_true: &[usize], y_pred: &[usize]) -> usize {
     let max_true = y_true.iter().copied().max().unwrap_or(0);
     let max_pred = y_pred.iter().copied().max().unwrap_or(0);
@@ -567,6 +687,92 @@ mod tests {
         // MCC is 0 when all same class (no variation)
         let m = mcc(&y_true, &y_pred);
         assert!(m.abs() < 1e-10 || m.is_nan() || (m - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_log_loss_perfect() {
+        let y_true = [0, 0, 1, 1];
+        let y_prob = [0.0, 0.0, 1.0, 1.0];
+        let ll = log_loss(&y_true, &y_prob);
+        assert!(ll < 1e-10, "expected near 0, got {ll}");
+    }
+
+    #[test]
+    fn test_log_loss_worst() {
+        let y_true = [0, 0, 1, 1];
+        let y_prob = [0.99, 0.99, 0.01, 0.01];
+        let ll = log_loss(&y_true, &y_prob);
+        assert!(ll > 2.0, "expected high loss, got {ll}");
+    }
+
+    #[test]
+    fn test_log_loss_uniform() {
+        let y_true = [0, 0, 1, 1];
+        let y_prob = [0.5, 0.5, 0.5, 0.5];
+        let ll = log_loss(&y_true, &y_prob);
+        assert!(
+            (ll - 2.0_f64.ln()).abs() < 1e-10,
+            "expected ln(2), got {ll}"
+        );
+    }
+
+    #[test]
+    fn test_balanced_accuracy_imbalanced() {
+        // 90 negatives all correct, 10 positives all wrong
+        let mut y_true = vec![0usize; 90];
+        y_true.extend(vec![1usize; 10]);
+        let mut y_pred = vec![0usize; 90];
+        y_pred.extend(vec![0usize; 10]);
+        // Class 0 recall = 1.0, Class 1 recall = 0.0 -> balanced = 0.5
+        let ba = balanced_accuracy(&y_true, &y_pred);
+        assert!((ba - 0.5).abs() < 1e-10, "expected 0.5, got {ba}");
+    }
+
+    #[test]
+    fn test_specificity_binary() {
+        // TN=2, FP=1, FN=1, TP=2
+        let y_true = [0, 0, 0, 1, 1, 1];
+        let y_pred = [0, 0, 1, 1, 1, 0];
+        // Specificity = TN/(TN+FP) = 2/3
+        let s = specificity(&y_true, &y_pred);
+        assert!((s - 2.0 / 3.0).abs() < 1e-10, "expected 2/3, got {s}");
+    }
+
+    #[test]
+    fn test_cohen_kappa_perfect() {
+        let y_true = [0, 0, 1, 1, 2, 2];
+        let y_pred = [0, 0, 1, 1, 2, 2];
+        let k = cohen_kappa(&y_true, &y_pred);
+        assert!((k - 1.0).abs() < 1e-10, "expected 1.0, got {k}");
+    }
+
+    #[test]
+    fn test_cohen_kappa_chance() {
+        // All predicted as class 0 with balanced classes -> kappa near 0
+        let y_true = [0, 0, 0, 1, 1, 1, 2, 2, 2];
+        let y_pred = [0, 1, 2, 0, 1, 2, 0, 1, 2];
+        let k = cohen_kappa(&y_true, &y_pred);
+        assert!(k.abs() < 0.1, "expected near 0, got {k}");
+    }
+
+    #[test]
+    fn test_hamming_loss_equals_1_minus_accuracy() {
+        let y_true = [0, 0, 1, 1, 2, 2];
+        let y_pred = [0, 1, 1, 2, 2, 0];
+        let hl = hamming_loss(&y_true, &y_pred);
+        let acc = accuracy(&y_true, &y_pred);
+        assert!((hl - (1.0 - acc)).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_jaccard_score_binary() {
+        // Class 0: TP=1, FP=1, FN=1 -> IoU = 1/3
+        // Class 1: TP=1, FP=1, FN=1 -> IoU = 1/3
+        // Macro = 1/3
+        let y_true = [0, 0, 1, 1];
+        let y_pred = [0, 1, 1, 0];
+        let j = jaccard_score(&y_true, &y_pred, Average::Macro);
+        assert!((j - 1.0 / 3.0).abs() < 1e-10, "expected 1/3, got {j}");
     }
 
     #[test]
