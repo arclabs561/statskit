@@ -1,0 +1,21 @@
+# Managed by repository-settings/app
+# https://github.com/repository-settings/app
+
+repository:
+  description: "Statistical judgment and evaluation primitives"
+  homepage: "https://docs.rs/statskit"
+  private: false
+  has_issues: true
+  has_wiki: false
+  has_downloads: true
+  default_branch: main
+  allow_squash_merge: true
+  allow_merge_commit: true
+  allow_rebase_merge: true
+  delete_branch_on_merge: true
+
+  topics:
+    - evaluation
+    - metrics
+    - rust
+    - statistics
