@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/statskit/badge.svg)](https://docs.rs/statskit)
 [![CI](https://github.com/arclabs561/statskit/actions/workflows/ci.yml/badge.svg)](https://github.com/arclabs561/statskit/actions/workflows/ci.yml)
 
-Statistical judgment and evaluation primitives (metrics + small stats helpers).
+Statistical judgment and evaluation primitives.
 
 ## Quickstart
 
