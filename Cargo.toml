@@ -12,6 +12,8 @@ readme = "README.md"
 keywords = ["statistics", "evaluation", "metrics", "classification", "bootstrap"]
 categories = ["science", "mathematics"]
 
+[workspace]
+
 [dependencies]
 rand = "0.9"
 thiserror = "2.0"
