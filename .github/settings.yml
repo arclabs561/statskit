@@ -2,11 +2,12 @@
 # https://github.com/repository-settings/app
 
 repository:
-  description: "Statistical judgment and evaluation primitives"
+  description: "ML model evaluation: classification metrics, calibration, statistical comparison"
   homepage: "https://docs.rs/statskit"
   private: false
   has_issues: true
   has_wiki: false
+  has_projects: false
   has_downloads: true
   default_branch: main
   allow_squash_merge: true
@@ -15,7 +16,7 @@ repository:
   delete_branch_on_merge: true
 
   topics:
+    - machine-learning
     - evaluation
     - metrics
-    - rust
     - statistics

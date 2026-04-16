@@ -942,7 +942,7 @@ mod tests {
         let a = [10.0, 11.0, 12.0, 13.0, 14.0];
         let b = [0.0, 1.0, 2.0, 3.0, 4.0];
         let rb = rank_biserial(&a, &b);
-        assert!(rb >= -1.0 && rb <= 1.0, "rb = {rb}");
+        assert!((-1.0..=1.0).contains(&rb), "rb = {rb}");
         assert!(rb > 0.0); // a clearly greater
     }
 
