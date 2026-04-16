@@ -2,7 +2,7 @@
 # https://github.com/repository-settings/app
 
 repository:
-  description: "ML model evaluation: classification metrics, calibration, statistical comparison"
+  description: "Evaluation toolkit for ML models"
   homepage: "https://docs.rs/statskit"
   private: false
   has_issues: true
