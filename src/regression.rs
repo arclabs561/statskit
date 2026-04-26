@@ -4,6 +4,11 @@ pub fn mse(y_true: &[f64], y_pred: &[f64]) -> f64 {
     if y_true.is_empty() {
         return 0.0;
     }
+    // SIMD-accelerated reduction via innr when the `simd` feature is enabled;
+    // portable fallback uses the iterator path.
+    #[cfg(feature = "simd")]
+    let sum: f64 = innr::dense_f64::l2_distance_squared_f64(y_true, y_pred);
+    #[cfg(not(feature = "simd"))]
     let sum: f64 = y_true
         .iter()
         .zip(y_pred.iter())
@@ -23,6 +28,9 @@ pub fn mae(y_true: &[f64], y_pred: &[f64]) -> f64 {
     if y_true.is_empty() {
         return 0.0;
     }
+    #[cfg(feature = "simd")]
+    let sum: f64 = innr::dense_f64::l1_distance_f64(y_true, y_pred);
+    #[cfg(not(feature = "simd"))]
     let sum: f64 = y_true
         .iter()
         .zip(y_pred.iter())
@@ -41,6 +49,9 @@ pub fn r_squared(y_true: &[f64], y_pred: &[f64]) -> f64 {
         return 0.0;
     }
     let mean_y: f64 = y_true.iter().sum::<f64>() / y_true.len() as f64;
+    #[cfg(feature = "simd")]
+    let ss_res: f64 = innr::dense_f64::l2_distance_squared_f64(y_true, y_pred);
+    #[cfg(not(feature = "simd"))]
     let ss_res: f64 = y_true
         .iter()
         .zip(y_pred.iter())
