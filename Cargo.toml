@@ -1,6 +1,6 @@
 [package]
 name = "statskit"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.85"
 description = "Statistical judgment and evaluation: classification metrics, calibration, bootstrap, and system comparison"
@@ -18,7 +18,7 @@ categories = ["science", "mathematics"]
 rand = "0.9"
 thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"], optional = true }
-innr = { version = "0.4", optional = true }
+innr = { version = "0.6", optional = true }
 
 [features]
 serde = ["dep:serde"]
