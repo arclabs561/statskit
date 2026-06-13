@@ -10,15 +10,15 @@ Statistical judgment and evaluation primitives.
 
 ```toml
 [dependencies]
-# Not on crates.io yet; depend via git (pin `rev` for reproducibility).
-statskit = { git = "https://github.com/arclabs561/statskit" }
+statskit = "0.1"
 ```
 
 ```rust
 use statskit::{accuracy, variance_population};
 
-let acc = accuracy(2, 3);
-assert_eq!(acc, 2.0 / 3.0);
+// accuracy takes parallel label slices and returns the fraction correct.
+let acc = accuracy(&[0, 1, 1, 0], &[0, 1, 0, 0]);
+assert_eq!(acc, 0.75);
 
 let xs = [1.0, 2.0, 3.0, 4.0];
 assert_eq!(variance_population(&xs).unwrap(), 1.25);
@@ -26,10 +26,11 @@ assert_eq!(variance_population(&xs).unwrap(), 1.25);
 
 ## Modules
 
-- `statskit::metrics`: Evaluation metrics (intentionally small; grows with downstream usage).
+- `statskit::classify`: Classification metrics (accuracy, precision, recall, F1, confusion matrix, log loss).
+- `statskit::regression`: Regression metrics (MSE, MAE, R^2, and related).
+- `statskit::calibration`: Probability-calibration metrics.
 - `statskit::stats`: Basic moments and means (small helpers; numerically stable where practical).
 
 ## Status
 
 - Experimental, intentionally small surface.
-- Not published on crates.io yet (`Cargo.toml` sets `publish = false`).
