@@ -25,3 +25,9 @@ serde = ["dep:serde"]
 # SIMD-accelerated f64 reductions in regression metrics (MSE, MAE, R^2).
 # Replaces the iterator-based fold with innr::dense_f64 reductions.
 simd = ["dep:innr"]
+
+[dev-dependencies]
+# Rosetta cross-language correctness fixtures (tests/rosetta_*.rs) load
+# sklearn-generated reference values from JSON.
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
