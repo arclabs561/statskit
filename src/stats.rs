@@ -325,10 +325,20 @@ where
     }
 }
 
-/// Almost Stochastic Order (ASO) violation level.
+/// Almost Stochastic Order (ASO) minimum violation level.
 ///
-/// Returns epsilon_min in [0, 1]. Values < 0.5 indicate A stochastically
-/// dominates B. Based on del Barrio et al. (2018) and Dror et al. (2019).
+/// Implements the ASO test of Dror et al. (2019) / del Barrio et al. (2018)
+/// as in the reference implementation (deep-significance): the statistic is
+/// the W2 violation ratio — squared quantile-difference mass on the region
+/// where stochastic order `A >= B` is violated, divided by total squared
+/// quantile-difference mass — and the returned `eps_min` is its upper
+/// confidence bound at the reference's default 0.95 confidence via
+/// bootstrap: `eps_min = clip(e_W2 + z_0.95 * sigma_hat / c, 0, 1)` with
+/// `c = sqrt(n_a * n_b / (n_a + n_b))`.
+///
+/// Scores are higher-is-better; `eps_min < 0.5` supports "A is better than
+/// B" (almost stochastic dominance), values near 0.5 mean no order either
+/// way.
 pub fn aso(scores_a: &[f64], scores_b: &[f64], n_bootstrap: usize, seed: Option<u64>) -> f64 {
     let n_a = scores_a.len();
     let n_b = scores_b.len();
@@ -339,52 +349,84 @@ pub fn aso(scores_a: &[f64], scores_b: &[f64], n_bootstrap: usize, seed: Option<
         None => SmallRng::from_os_rng(),
     };
 
+    let e_w2 = compute_epsilon(scores_a, scores_b);
+
     let indices_a: Vec<usize> = (0..n_a).collect();
     let indices_b: Vec<usize> = (0..n_b).collect();
-
-    let mut eps_values = Vec::with_capacity(n_bootstrap);
-
+    let mut samples = Vec::with_capacity(n_bootstrap);
     for _ in 0..n_bootstrap {
-        // Resample
         let sa: Vec<f64> = (0..n_a)
             .map(|_| scores_a[*indices_a.choose(&mut rng).unwrap()])
             .collect();
         let sb: Vec<f64> = (0..n_b)
             .map(|_| scores_b[*indices_b.choose(&mut rng).unwrap()])
             .collect();
-
-        eps_values.push(compute_epsilon(&sa, &sb));
+        samples.push(compute_epsilon(&sa, &sb));
     }
 
-    // Return the mean epsilon
-    eps_values.iter().sum::<f64>() / n_bootstrap as f64
+    let c = ((n_a * n_b) as f64 / (n_a + n_b) as f64).sqrt();
+    // Population standard deviation of c * (sample - e_W2), matching the
+    // reference (numpy std, ddof = 0).
+    let scaled: Vec<f64> = samples.iter().map(|s| c * (s - e_w2)).collect();
+    let mean = scaled.iter().sum::<f64>() / scaled.len() as f64;
+    let sigma_hat =
+        (scaled.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / scaled.len() as f64).sqrt();
+
+    // Phi^-1(1 - 0.95) = -1.6448536...; subtracting it adds the one-sided
+    // 95% margin, making eps_min an upper confidence bound.
+    const Z_95: f64 = 1.644_853_626_951_472_2;
+    (e_w2 + Z_95 * sigma_hat / c).clamp(0.0, 1.0)
+}
+
+/// W2 violation ratio `e_W2` (Dror et al. 2019, eqs. 4-5), mirroring the
+/// reference implementation's discretization exactly: quantile functions via
+/// `sorted[ceil(n * t) - 1]`, `t` on a `dt = 0.005` grid in `(0, 1)`, the
+/// violation integral skipping the first grid point, and `0.5` when the
+/// squared Wasserstein distance is zero (identical distributions carry no
+/// order information either way).
+///
+/// This is the deterministic point statistic underneath [`aso`]; `aso` adds
+/// a bootstrap upper-confidence margin on top of it.
+pub fn aso_violation_ratio(scores_a: &[f64], scores_b: &[f64]) -> f64 {
+    assert!(!scores_a.is_empty() && !scores_b.is_empty(), "empty input");
+    compute_epsilon(scores_a, scores_b)
 }
 
 fn compute_epsilon(a: &[f64], b: &[f64]) -> f64 {
-    // Compute the minimum epsilon such that F_A(x) <= F_B(x) + epsilon for all x
-    // This is the maximum violation of stochastic order
-    let mut all_vals: Vec<f64> = a.iter().chain(b.iter()).copied().collect();
-    all_vals.sort_by(|x, y| x.partial_cmp(y).unwrap());
-    all_vals.dedup();
+    const DT: f64 = 0.005;
 
-    let n_a = a.len() as f64;
-    let n_b = b.len() as f64;
+    let mut sa = a.to_vec();
+    sa.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    let mut sb = b.to_vec();
+    sb.sort_by(|x, y| x.partial_cmp(y).unwrap());
 
-    let mut max_violation = 0.0f64;
+    let quantile = |sorted: &[f64], p: f64| -> f64 {
+        let num = sorted.len();
+        let index = (num as f64 * p).ceil() as isize;
+        sorted[(index - 1).clamp(0, num as isize - 1) as usize]
+    };
 
-    for &x in &all_vals {
-        // F_B(x) - F_A(x): if positive, A dominates at this point
-        // We want max(F_A(x) - F_B(x), 0) as violation
-        let fa = a.iter().filter(|&&v| v <= x).count() as f64 / n_a;
-        let fb = b.iter().filter(|&&v| v <= x).count() as f64 / n_b;
-        // For A to stochastically dominate B (A >= B in distribution),
-        // we need F_A(x) <= F_B(x) for all x (A has more mass on higher values).
-        // Violation = max(F_A(x) - F_B(x), 0)
-        let violation = (fa - fb).max(0.0);
-        max_violation = max_violation.max(violation);
+    let mut w2 = 0.0f64;
+    let mut violation = 0.0f64;
+    let mut i = 1usize;
+    loop {
+        let t = i as f64 * DT;
+        if t >= 1.0 {
+            break;
+        }
+        let f = quantile(&sa, t);
+        let g = quantile(&sb, t);
+        let d = g - f;
+        w2 += d * d * DT;
+        // Violation mass where order is violated (g > f); the reference
+        // ignores the first grid point in the numerator.
+        if d > 0.0 && i > 1 {
+            violation += d * d * DT;
+        }
+        i += 1;
     }
 
-    max_violation
+    if w2 == 0.0 { 0.5 } else { violation / w2 }
 }
 
 /// Benjamini-Hochberg FDR correction.
@@ -716,14 +758,32 @@ pub fn mann_whitney(a: &[f64], b: &[f64], alpha: f64) -> MannWhitneyResult {
     let u = u_a.min(u_b);
 
     let mean_u = (n_a as f64 * n_b as f64) / 2.0;
-    let var_u = (n_a as f64 * n_b as f64 * (n_a as f64 + n_b as f64 + 1.0)) / 12.0;
 
+    // Tie-corrected variance (scipy's asymptotic method): subtract
+    // sum(t^3 - t) over tie groups, scaled by n(n - 1).
+    let mut tie_term = 0.0f64;
+    let mut i = 0;
+    while i < n {
+        let mut j = i;
+        while j < n && (combined[j].0 - combined[i].0).abs() < 1e-15 {
+            j += 1;
+        }
+        let t = (j - i) as f64;
+        tie_term += t * t * t - t;
+        i = j;
+    }
+    let nf = n as f64;
+    let var_u = (n_a as f64 * n_b as f64 / 12.0) * ((nf + 1.0) - tie_term / (nf * (nf - 1.0)));
+
+    // Continuity correction (scipy default use_continuity=True): the
+    // discrete U statistic is approximated by a continuous normal, so the
+    // deviation shrinks by 0.5.
     let z = if var_u > 0.0 {
-        (u - mean_u).abs() / var_u.sqrt()
+        ((u - mean_u).abs() - 0.5).max(0.0) / var_u.sqrt()
     } else {
         0.0
     };
-    let p_value = 2.0 * (1.0 - normal_cdf(z));
+    let p_value = (2.0 * (1.0 - normal_cdf(z))).min(1.0);
 
     MannWhitneyResult {
         statistic: u,

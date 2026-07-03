@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `aso` now computes the ASO statistic Dror et al. (2019) actually define:
+  the W2 violation ratio (violation mass over total squared
+  quantile-difference mass) with a bootstrap upper-confidence margin,
+  mirroring the reference implementation (deep-significance) exactly. The
+  previous implementation returned the bootstrap mean of a one-sided
+  Kolmogorov-Smirnov-style CDF-difference supremum, a different statistic
+  that happened to share the [0, 1] range and the under-dominance
+  behavior. Values change for effectively all inputs; the deterministic
+  point statistic is exposed as `aso_violation_ratio` and pinned against
+  deepsig-generated fixtures.
+- `mann_whitney` now applies the continuity correction and the tie
+  correction that scipy's asymptotic method applies by default; p-values
+  previously overstated significance on tied data and small samples.
+  Pinned against scipy-generated fixtures (`method="asymptotic"`).
+
 ## [0.1.1] - 2026-06-11
 
 ### Added

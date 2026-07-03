@@ -7,9 +7,10 @@
 //! regression mse/rmse/mae/r_squared vs sklearn.metrics; descriptive
 //! mean/variance/stddev (population ddof=0, sample ddof=1) vs numpy.
 //!
-//! Deferred: the statistical tests in stats.rs (wilcoxon, mann_whitney,
-//! cohens_d, friedman, mcnemar), whose p-value / pooled-std / continuity
-//! conventions must be matched to scipy before a fixture is safe.
+//! Deferred: wilcoxon, cohens_d, friedman, mcnemar, whose p-value /
+//! pooled-std / tie conventions must be matched to scipy before a fixture
+//! is safe. mann_whitney and aso are grounded in
+//! rosetta_statskit_hypothesis.rs.
 //!
 //! Regenerate the fixture: `uv run tests/fixtures/rosetta/gen_statskit_stats.py`.
 
