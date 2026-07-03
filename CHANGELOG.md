@@ -4,6 +4,8 @@ All notable changes to this project are documented here. Format based on [Keep a
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-03
+
 ### Fixed
 - `aso` now computes the ASO statistic Dror et al. (2019) actually define:
   the W2 violation ratio (violation mass over total squared

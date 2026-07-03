@@ -21,7 +21,7 @@ Bonferroni multiple-comparison corrections). No dependencies beyond `rand` and
 
 ```toml
 [dependencies]
-statskit = "0.1"
+statskit = "0.2"
 ```
 
 ```rust
