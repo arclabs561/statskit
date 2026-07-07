@@ -2,7 +2,7 @@
 # https://github.com/repository-settings/app
 
 repository:
-  description: "Evaluation toolkit for ML models"
+  description: "Statistical metrics and tests"
   homepage: "https://docs.rs/statskit"
   private: false
   has_issues: true

@@ -3,19 +3,11 @@
 [![crates.io](https://img.shields.io/crates/v/statskit.svg)](https://crates.io/crates/statskit)
 [![Documentation](https://docs.rs/statskit/badge.svg)](https://docs.rs/statskit)
 
-Statistical judgment and evaluation primitives.
+Statistical metrics and tests.
 
-statskit turns "it seems better" into "it is better, under a stated metric, with
-assumptions stated." It provides four metric families over plain `f64` and
-`usize` slices: classification metrics (precision, recall, F1/Fbeta, MCC,
-ROC-AUC, PR-AUC / average precision, confusion matrix, log loss, balanced
-accuracy, specificity, Cohen's kappa, Hamming loss, Jaccard), calibration
-metrics (Brier score, ECE, MCE, reliability diagram), regression metrics (MSE,
-RMSE, MAE, R-squared), and significance/comparison tests for deciding whether
-one system actually beats another (bootstrap BCa, Wilcoxon, Mann-Whitney,
-permutation, McNemar, Friedman, ASO, effect sizes, and Benjamini-Hochberg /
-Bonferroni multiple-comparison corrections). No dependencies beyond `rand` and
-`thiserror`.
+`statskit` works on plain `f64` and `usize` slices. It provides classification,
+calibration, regression, descriptive statistics, and paired or unpaired system
+comparison tests. Optional features add serde support and SIMD reductions.
 
 ## Quickstart
 
