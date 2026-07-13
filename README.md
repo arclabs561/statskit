@@ -62,3 +62,8 @@ let ci = bootstrap_bca(&a, &b, mean_diff, BootstrapConfig::default());
 Experimental, intentionally small surface. A metric is added only when it has a
 downstream use case and tests; functions making a statistical claim (CI,
 p-value) state their assumptions in the rustdoc.
+
+## License
+
+Licensed under either the [Apache License, Version 2.0](LICENSE-APACHE) or
+the [MIT license](LICENSE-MIT), at your option.
