@@ -16,7 +16,8 @@ repository:
   delete_branch_on_merge: true
 
   topics:
-    - machine-learning
     - evaluation
+    - machine-learning
     - metrics
+    - rust
     - statistics
