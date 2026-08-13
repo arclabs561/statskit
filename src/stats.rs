@@ -42,7 +42,7 @@ fn welford_mean_m2(xs: &[f64]) -> Option<(f64, f64)> {
 pub fn variance_population(xs: &[f64]) -> Option<f64> {
     let (_mean, m2) = welford_mean_m2(xs)?;
     let var = m2 / (xs.len() as f64);
-    Some(var.max(0.0))
+    Some(if var.is_nan() { var } else { var.max(0.0) })
 }
 
 /// Compute the (sample) variance of a slice (Bessel corrected).
@@ -54,7 +54,25 @@ pub fn variance_sample(xs: &[f64]) -> Option<f64> {
     }
     let (_mean, m2) = welford_mean_m2(xs)?;
     let var = m2 / (xs.len() as f64 - 1.0);
-    Some(var.max(0.0))
+    Some(if var.is_nan() { var } else { var.max(0.0) })
+}
+
+fn assert_finite_samples(values: &[f64]) {
+    assert!(
+        values.iter().all(|value| value.is_finite()),
+        "samples must be finite"
+    );
+}
+
+fn assert_valid_p_values(p_values: &[f64]) {
+    assert!(
+        p_values.iter().all(|p| p.is_finite()),
+        "p-values must be finite"
+    );
+    assert!(
+        p_values.iter().all(|p| (0.0..=1.0).contains(p)),
+        "p-values must be in [0, 1]"
+    );
 }
 
 /// Compute the (population) standard deviation of a slice.
@@ -131,11 +149,14 @@ where
     F: Fn(&[f64], &[f64]) -> f64,
 {
     assert_eq!(scores_a.len(), scores_b.len(), "length mismatch");
+    assert_finite_samples(scores_a);
+    assert_finite_samples(scores_b);
     let n = scores_a.len();
     assert!(n > 0, "empty input");
     assert!(config.n_resamples > 0, "n_resamples must be positive");
 
     let observed = statistic(scores_a, scores_b);
+    assert!(observed.is_finite(), "statistic must be finite");
 
     let mut rng = match config.seed {
         Some(s) => SmallRng::seed_from_u64(s),
@@ -150,7 +171,9 @@ where
             (0..n).map(|_| *indices.choose(&mut rng).unwrap()).collect();
         let sa: Vec<f64> = sample_indices.iter().map(|&i| scores_a[i]).collect();
         let sb: Vec<f64> = sample_indices.iter().map(|&i| scores_b[i]).collect();
-        boot_stats.push(statistic(&sa, &sb));
+        let value = statistic(&sa, &sb);
+        assert!(value.is_finite(), "statistic must be finite");
+        boot_stats.push(value);
     }
 
     boot_stats.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -208,6 +231,8 @@ where
 /// Uses normal approximation for n > 20.
 pub fn wilcoxon(a: &[f64], b: &[f64], alpha: f64) -> WilcoxonResult {
     assert_eq!(a.len(), b.len(), "length mismatch");
+    assert_finite_samples(a);
+    assert_finite_samples(b);
 
     let diffs: Vec<f64> = a.iter().zip(b.iter()).map(|(&x, &y)| x - y).collect();
     let nonzero: Vec<f64> = diffs.iter().copied().filter(|&d| d.abs() > 1e-15).collect();
@@ -293,9 +318,12 @@ where
     F: Fn(&[f64], &[f64]) -> f64,
 {
     assert_eq!(a.len(), b.len(), "length mismatch");
+    assert_finite_samples(a);
+    assert_finite_samples(b);
     assert!(n_permutations > 0, "n_permutations must be positive");
     let n = a.len();
     let observed = statistic(a, b);
+    assert!(observed.is_finite(), "statistic must be finite");
 
     let mut rng = match seed {
         Some(s) => SmallRng::seed_from_u64(s),
@@ -314,6 +342,7 @@ where
             }
         }
         let perm_stat = statistic(&pa, &pb);
+        assert!(perm_stat.is_finite(), "statistic must be finite");
         if perm_stat.abs() >= observed.abs() {
             count_extreme += 1;
         }
@@ -345,6 +374,8 @@ pub fn aso(scores_a: &[f64], scores_b: &[f64], n_bootstrap: usize, seed: Option<
     let n_a = scores_a.len();
     let n_b = scores_b.len();
     assert!(n_a > 0 && n_b > 0, "empty input");
+    assert_finite_samples(scores_a);
+    assert_finite_samples(scores_b);
     assert!(n_bootstrap > 0, "n_bootstrap must be positive");
 
     let mut rng = match seed {
@@ -392,6 +423,8 @@ pub fn aso(scores_a: &[f64], scores_b: &[f64], n_bootstrap: usize, seed: Option<
 /// a bootstrap upper-confidence margin on top of it.
 pub fn aso_violation_ratio(scores_a: &[f64], scores_b: &[f64]) -> f64 {
     assert!(!scores_a.is_empty() && !scores_b.is_empty(), "empty input");
+    assert_finite_samples(scores_a);
+    assert_finite_samples(scores_b);
     compute_epsilon(scores_a, scores_b)
 }
 
@@ -434,6 +467,7 @@ fn compute_epsilon(a: &[f64], b: &[f64]) -> f64 {
 
 /// Benjamini-Hochberg FDR correction.
 pub fn benjamini_hochberg(p_values: &[f64]) -> Vec<f64> {
+    assert_valid_p_values(p_values);
     let n = p_values.len();
     if n == 0 {
         return vec![];
@@ -458,12 +492,15 @@ pub fn benjamini_hochberg(p_values: &[f64]) -> Vec<f64> {
 
 /// Bonferroni correction: `p_adj[i] = min(p[i] * n, 1.0)`.
 pub fn bonferroni(p_values: &[f64]) -> Vec<f64> {
+    assert_valid_p_values(p_values);
     let n = p_values.len() as f64;
     p_values.iter().map(|&p| (p * n).min(1.0)).collect()
 }
 
 /// Cohen's d effect size (pooled standard deviation).
 pub fn cohens_d(a: &[f64], b: &[f64]) -> f64 {
+    assert_finite_samples(a);
+    assert_finite_samples(b);
     let n_a = a.len() as f64;
     let n_b = b.len() as f64;
     if n_a < 2.0 || n_b < 2.0 {
@@ -490,6 +527,8 @@ pub fn cohens_d(a: &[f64], b: &[f64]) -> f64 {
 /// Based on the Wilcoxon W+ and W- sums. Range [-1, 1].
 pub fn rank_biserial(a: &[f64], b: &[f64]) -> f64 {
     assert_eq!(a.len(), b.len(), "length mismatch");
+    assert_finite_samples(a);
+    assert_finite_samples(b);
     let diffs: Vec<f64> = a.iter().zip(b.iter()).map(|(&x, &y)| x - y).collect();
     let nonzero: Vec<f64> = diffs.iter().copied().filter(|&d| d.abs() > 1e-15).collect();
     let n = nonzero.len();
@@ -544,6 +583,8 @@ pub fn rank_biserial(a: &[f64], b: &[f64]) -> f64 {
 /// Convenience: mean difference between paired score vectors.
 pub fn mean_diff(a: &[f64], b: &[f64]) -> f64 {
     assert_eq!(a.len(), b.len(), "length mismatch");
+    assert_finite_samples(a);
+    assert_finite_samples(b);
     if a.is_empty() {
         return 0.0;
     }
@@ -644,6 +685,7 @@ pub fn friedman(scores: &[&[f64]], alpha: f64) -> FriedmanResult {
     let n = scores[0].len();
     for s in scores {
         assert_eq!(s.len(), n, "all systems must have same number of datasets");
+        assert_finite_samples(s);
     }
     assert!(n > 0, "empty input");
 
@@ -716,6 +758,8 @@ pub struct MannWhitneyResult {
 pub fn mann_whitney(a: &[f64], b: &[f64], alpha: f64) -> MannWhitneyResult {
     let n_a = a.len();
     let n_b = b.len();
+    assert_finite_samples(a);
+    assert_finite_samples(b);
     if n_a == 0 || n_b == 0 {
         return MannWhitneyResult {
             statistic: 0.0,
@@ -723,7 +767,6 @@ pub fn mann_whitney(a: &[f64], b: &[f64], alpha: f64) -> MannWhitneyResult {
             significant: false,
         };
     }
-
     // Combine and rank
     let mut combined: Vec<(f64, usize)> = Vec::with_capacity(n_a + n_b);
     for &v in a {
@@ -908,6 +951,86 @@ mod tests {
         // Variance of [0,2,4,6] is 5.0 (population).
         assert!((vp - 5.0).abs() < 1e-9, "vp={vp}");
     }
+
+    #[test]
+    fn variance_propagates_non_finite_accumulation() {
+        assert!(variance_population(&[f64::NAN]).unwrap().is_nan());
+        assert!(
+            variance_population(&[f64::INFINITY, f64::INFINITY])
+                .unwrap()
+                .is_nan()
+        );
+        assert!(variance_sample(&[1.0, f64::NAN]).unwrap().is_nan());
+    }
+
+    macro_rules! rejects_non_finite_samples {
+        ($name:ident, $call:expr) => {
+            #[test]
+            #[should_panic(expected = "samples must be finite")]
+            fn $name() {
+                $call;
+            }
+        };
+    }
+
+    rejects_non_finite_samples!(wilcoxon_rejects_nan, {
+        wilcoxon(&[f64::NAN], &[0.0], 0.05)
+    });
+    rejects_non_finite_samples!(aso_rejects_infinity, {
+        aso(&[f64::INFINITY], &[0.0], 10, Some(1))
+    });
+    rejects_non_finite_samples!(friedman_rejects_nan, {
+        friedman(&[&[f64::NAN], &[1.0], &[2.0]], 0.05)
+    });
+    rejects_non_finite_samples!(mann_whitney_rejects_nan, {
+        mann_whitney(&[f64::NAN], &[0.0], 0.05)
+    });
+
+    #[test]
+    #[should_panic(expected = "statistic must be finite")]
+    fn bootstrap_rejects_non_finite_statistic() {
+        bootstrap_bca(
+            &[1.0],
+            &[2.0],
+            |_, _| f64::NAN,
+            BootstrapConfig {
+                n_resamples: 10,
+                alpha: 0.05,
+                seed: Some(1),
+            },
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "statistic must be finite")]
+    fn permutation_rejects_non_finite_statistic() {
+        permutation_test(&[1.0], &[2.0], 10, |_, _| f64::NAN, Some(1));
+    }
+
+    macro_rules! rejects_invalid_p_values {
+        ($name:ident, $message:literal, $call:expr) => {
+            #[test]
+            #[should_panic(expected = $message)]
+            fn $name() {
+                $call;
+            }
+        };
+    }
+
+    rejects_invalid_p_values!(bh_rejects_nan, "p-values must be finite", {
+        benjamini_hochberg(&[f64::NAN])
+    });
+    rejects_invalid_p_values!(bh_rejects_out_of_range, "p-values must be in [0, 1]", {
+        benjamini_hochberg(&[-0.1])
+    });
+    rejects_invalid_p_values!(bonferroni_rejects_nan, "p-values must be finite", {
+        bonferroni(&[f64::NAN])
+    });
+    rejects_invalid_p_values!(
+        bonferroni_rejects_out_of_range,
+        "p-values must be in [0, 1]",
+        { bonferroni(&[1.1]) }
+    );
 
     // --- Statistical tests (from evalkit) ---
 

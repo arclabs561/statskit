@@ -7,11 +7,27 @@ pub struct CalibrationBin {
     pub count: usize,
 }
 
+fn validate_binary_probabilities(y_true: &[usize], y_prob: &[f64]) {
+    assert!(
+        y_true.iter().all(|&label| label <= 1),
+        "labels must be binary"
+    );
+    assert!(
+        y_prob.iter().all(|p| p.is_finite()),
+        "probabilities must be finite"
+    );
+    assert!(
+        y_prob.iter().all(|p| (0.0..=1.0).contains(p)),
+        "probabilities must be in [0, 1]"
+    );
+}
+
 /// Brier score: mean squared error between predicted probability and outcome.
 ///
 /// Binary classification. Returns 0.0 for empty input.
 pub fn brier_score(y_true: &[usize], y_prob: &[f64]) -> f64 {
     assert_eq!(y_true.len(), y_prob.len(), "length mismatch");
+    validate_binary_probabilities(y_true, y_prob);
     if y_true.is_empty() {
         return 0.0;
     }
@@ -31,7 +47,9 @@ pub fn brier_score(y_true: &[usize], y_prob: &[f64]) -> f64 {
 /// Returns 0.0 for empty input.
 pub fn expected_calibration_error(y_true: &[usize], y_prob: &[f64], n_bins: usize) -> f64 {
     assert_eq!(y_true.len(), y_prob.len(), "length mismatch");
-    if y_true.is_empty() || n_bins == 0 {
+    assert!(n_bins > 0, "n_bins must be positive");
+    validate_binary_probabilities(y_true, y_prob);
+    if y_true.is_empty() {
         return 0.0;
     }
     let bins = reliability_diagram(y_true, y_prob, n_bins);
@@ -45,6 +63,7 @@ pub fn expected_calibration_error(y_true: &[usize], y_prob: &[f64], n_bins: usiz
 pub fn reliability_diagram(y_true: &[usize], y_prob: &[f64], n_bins: usize) -> Vec<CalibrationBin> {
     assert_eq!(y_true.len(), y_prob.len(), "length mismatch");
     assert!(n_bins > 0, "n_bins must be positive");
+    validate_binary_probabilities(y_true, y_prob);
 
     let mut bin_sums = vec![0.0; n_bins];
     let mut bin_pos = vec![0.0; n_bins];
@@ -72,7 +91,9 @@ pub fn reliability_diagram(y_true: &[usize], y_prob: &[f64], n_bins: usize) -> V
 /// Same binning as ECE, but takes the max gap instead of the weighted average.
 pub fn maximum_calibration_error(y_true: &[usize], y_prob: &[f64], n_bins: usize) -> f64 {
     assert_eq!(y_true.len(), y_prob.len(), "length mismatch");
-    if y_true.is_empty() || n_bins == 0 {
+    assert!(n_bins > 0, "n_bins must be positive");
+    validate_binary_probabilities(y_true, y_prob);
+    if y_true.is_empty() {
         return 0.0;
     }
     let bins = reliability_diagram(y_true, y_prob, n_bins);
@@ -142,5 +163,29 @@ mod tests {
             assert!(b.fraction_positive >= 0.0 && b.fraction_positive <= 1.0);
             assert!(b.mean_predicted >= 0.0 && b.mean_predicted <= 1.0);
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "labels must be binary")]
+    fn brier_rejects_non_binary_labels() {
+        brier_score(&[2], &[0.5]);
+    }
+
+    #[test]
+    #[should_panic(expected = "probabilities must be finite")]
+    fn reliability_rejects_non_finite_probabilities() {
+        reliability_diagram(&[1], &[f64::NAN], 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "probabilities must be in [0, 1]")]
+    fn brier_rejects_out_of_range_probabilities() {
+        brier_score(&[1], &[1.1]);
+    }
+
+    #[test]
+    #[should_panic(expected = "n_bins must be positive")]
+    fn calibration_errors_reject_zero_bins() {
+        expected_calibration_error(&[1], &[0.5], 0);
     }
 }

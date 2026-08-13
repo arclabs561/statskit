@@ -29,9 +29,39 @@ pub struct ClassificationReport {
     pub weighted_avg: PerClassMetrics,
 }
 
+fn assert_binary_labels(labels: &[usize]) {
+    assert!(
+        labels.iter().all(|&label| label <= 1),
+        "labels must be binary"
+    );
+}
+
+fn assert_finite_scores(scores: &[f64]) {
+    assert!(
+        scores.iter().all(|score| score.is_finite()),
+        "scores must be finite"
+    );
+}
+
+fn assert_probabilities(probabilities: &[f64]) {
+    assert!(
+        probabilities.iter().all(|p| p.is_finite()),
+        "probabilities must be finite"
+    );
+    assert!(
+        probabilities.iter().all(|p| (0.0..=1.0).contains(p)),
+        "probabilities must be in [0, 1]"
+    );
+}
+
 /// Confusion matrix. `cm[true_class][pred_class]` = count.
 pub fn confusion_matrix(y_true: &[usize], y_pred: &[usize], n_classes: usize) -> Vec<Vec<u64>> {
     assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
+    assert!(n_classes > 0, "n_classes must be positive");
+    assert!(
+        y_true.iter().chain(y_pred).all(|&label| label < n_classes),
+        "label out of range"
+    );
     let mut cm = vec![vec![0u64; n_classes]; n_classes];
     for (&t, &p) in y_true.iter().zip(y_pred.iter()) {
         cm[t][p] += 1;
@@ -182,6 +212,8 @@ pub fn mcc(y_true: &[usize], y_pred: &[usize]) -> f64 {
 /// Binary classification only (class 0 vs 1).
 pub fn roc_curve(y_true: &[usize], y_scores: &[f64]) -> Vec<(f64, f64, f64)> {
     assert_eq!(y_true.len(), y_scores.len(), "length mismatch");
+    assert_binary_labels(y_true);
+    assert_finite_scores(y_scores);
     let total_pos = y_true.iter().filter(|&&y| y == 1).count() as f64;
     let total_neg = y_true.iter().filter(|&&y| y == 0).count() as f64;
 
@@ -228,6 +260,8 @@ pub fn roc_auc(y_true: &[usize], y_scores: &[f64]) -> f64 {
 /// Precision-recall curve as `(precision, recall, threshold)`.
 pub fn pr_curve(y_true: &[usize], y_scores: &[f64]) -> Vec<(f64, f64, f64)> {
     assert_eq!(y_true.len(), y_scores.len(), "length mismatch");
+    assert_binary_labels(y_true);
+    assert_finite_scores(y_scores);
     let total_pos = y_true.iter().filter(|&&y| y == 1).count() as f64;
 
     if total_pos == 0.0 {
@@ -258,6 +292,8 @@ pub fn pr_curve(y_true: &[usize], y_scores: &[f64]) -> Vec<(f64, f64, f64)> {
 /// Average precision (area under PR curve).
 pub fn average_precision(y_true: &[usize], y_scores: &[f64]) -> f64 {
     assert_eq!(y_true.len(), y_scores.len(), "length mismatch");
+    assert_binary_labels(y_true);
+    assert_finite_scores(y_scores);
     let total_pos = y_true.iter().filter(|&&y| y == 1).count() as f64;
 
     if total_pos == 0.0 {
@@ -296,6 +332,7 @@ pub fn classification_report(
     y_pred: &[usize],
     n_classes: usize,
 ) -> ClassificationReport {
+    assert!(n_classes > 0, "n_classes must be positive");
     let cm = confusion_matrix(y_true, y_pred, n_classes);
     let stats = per_class_tp_fp_fn(&cm, n_classes);
     let supports = support_per_class(&cm, n_classes);
@@ -379,6 +416,8 @@ pub fn classification_report(
 /// Clips probabilities to `[1e-15, 1-1e-15]` to avoid `log(0)`.
 pub fn log_loss(y_true: &[usize], y_prob: &[f64]) -> f64 {
     assert_eq!(y_true.len(), y_prob.len(), "length mismatch");
+    assert_binary_labels(y_true);
+    assert_probabilities(y_prob);
     if y_true.is_empty() {
         return 0.0;
     }
@@ -421,6 +460,8 @@ pub fn balanced_accuracy(y_true: &[usize], y_pred: &[usize]) -> f64 {
 /// Specificity (true negative rate) for binary classification.
 pub fn specificity(y_true: &[usize], y_pred: &[usize]) -> f64 {
     assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
+    assert_binary_labels(y_true);
+    assert_binary_labels(y_pred);
     if y_true.is_empty() {
         return 0.0;
     }
@@ -583,6 +624,24 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "n_classes must be positive")]
+    fn confusion_matrix_rejects_zero_classes() {
+        confusion_matrix(&[], &[], 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "label out of range")]
+    fn confusion_matrix_rejects_labels_outside_declared_classes() {
+        confusion_matrix(&[2], &[0], 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "n_classes must be positive")]
+    fn classification_report_rejects_zero_classes() {
+        classification_report(&[], &[], 0);
+    }
+
+    #[test]
     fn test_precision_recall_f1_micro() {
         // For single-label classification, micro precision = micro recall = accuracy
         let y_true = [0, 0, 1, 1, 2, 2];
@@ -686,6 +745,18 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "labels must be binary")]
+    fn binary_ranking_metrics_reject_non_binary_labels() {
+        roc_curve(&[2], &[0.5]);
+    }
+
+    #[test]
+    #[should_panic(expected = "scores must be finite")]
+    fn binary_ranking_metrics_reject_non_finite_scores() {
+        average_precision(&[1], &[f64::INFINITY]);
+    }
+
+    #[test]
     fn test_all_same_class() {
         let y_true = [0, 0, 0];
         let y_pred = [0, 0, 0];
@@ -767,6 +838,18 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "probabilities must be finite")]
+    fn log_loss_rejects_non_finite_probabilities() {
+        log_loss(&[1], &[f64::NAN]);
+    }
+
+    #[test]
+    #[should_panic(expected = "probabilities must be in [0, 1]")]
+    fn log_loss_rejects_out_of_range_probabilities() {
+        log_loss(&[1], &[-0.1]);
+    }
+
+    #[test]
     fn test_balanced_accuracy_imbalanced() {
         // 90 negatives all correct, 10 positives all wrong
         let mut y_true = vec![0usize; 90];
@@ -786,6 +869,12 @@ mod tests {
         // Specificity = TN/(TN+FP) = 2/3
         let s = specificity(&y_true, &y_pred);
         assert!((s - 2.0 / 3.0).abs() < 1e-10, "expected 2/3, got {s}");
+    }
+
+    #[test]
+    #[should_panic(expected = "labels must be binary")]
+    fn specificity_rejects_non_binary_labels() {
+        specificity(&[2], &[0]);
     }
 
     #[test]
