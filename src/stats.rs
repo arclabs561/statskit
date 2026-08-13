@@ -133,6 +133,7 @@ where
     assert_eq!(scores_a.len(), scores_b.len(), "length mismatch");
     let n = scores_a.len();
     assert!(n > 0, "empty input");
+    assert!(config.n_resamples > 0, "n_resamples must be positive");
 
     let observed = statistic(scores_a, scores_b);
 
@@ -292,6 +293,7 @@ where
     F: Fn(&[f64], &[f64]) -> f64,
 {
     assert_eq!(a.len(), b.len(), "length mismatch");
+    assert!(n_permutations > 0, "n_permutations must be positive");
     let n = a.len();
     let observed = statistic(a, b);
 
@@ -343,6 +345,7 @@ pub fn aso(scores_a: &[f64], scores_b: &[f64], n_bootstrap: usize, seed: Option<
     let n_a = scores_a.len();
     let n_b = scores_b.len();
     assert!(n_a > 0 && n_b > 0, "empty input");
+    assert!(n_bootstrap > 0, "n_bootstrap must be positive");
 
     let mut rng = match seed {
         Some(s) => SmallRng::seed_from_u64(s),
@@ -637,7 +640,7 @@ pub struct FriedmanResult {
 /// (normal approximation via Wilson-Hilferty).
 pub fn friedman(scores: &[&[f64]], alpha: f64) -> FriedmanResult {
     let k = scores.len();
-    assert!(k >= 2, "need at least 2 systems");
+    assert!(k >= 3, "need at least 3 systems");
     let n = scores[0].len();
     for s in scores {
         assert_eq!(s.len(), n, "all systems must have same number of datasets");
@@ -925,6 +928,17 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "n_resamples must be positive")]
+    fn bootstrap_rejects_zero_resamples() {
+        let config = BootstrapConfig {
+            n_resamples: 0,
+            alpha: 0.05,
+            seed: Some(42),
+        };
+        bootstrap_bca(&[1.0], &[2.0], mean_diff, config);
+    }
+
+    #[test]
     fn test_wilcoxon_identical() {
         let a = [1.0, 2.0, 3.0, 4.0, 5.0];
         let b = [1.0, 2.0, 3.0, 4.0, 5.0];
@@ -955,6 +969,12 @@ mod tests {
         let b = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
         let result = permutation_test(&a, &b, 5000, mean_diff, Some(42));
         assert!(result.significant, "p={}", result.p_value);
+    }
+
+    #[test]
+    #[should_panic(expected = "n_permutations must be positive")]
+    fn permutation_test_rejects_zero_permutations() {
+        permutation_test(&[1.0], &[2.0], 0, mean_diff, Some(42));
     }
 
     #[test]
@@ -1016,6 +1036,12 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "n_bootstrap must be positive")]
+    fn aso_rejects_zero_bootstrap_samples() {
+        aso(&[1.0], &[2.0], 0, Some(42));
+    }
+
+    #[test]
     fn test_mcnemar_identical() {
         let y_true = [0, 0, 1, 1, 0, 1, 0, 1];
         let pred_a = [0, 1, 1, 0, 0, 1, 0, 1];
@@ -1044,6 +1070,14 @@ mod tests {
         let s3 = [0.8, 0.7, 0.9, 0.6, 0.85];
         let result = friedman(&[&s1, &s2, &s3], 0.05);
         assert!(!result.significant, "p={}", result.p_value);
+    }
+
+    #[test]
+    #[should_panic(expected = "need at least 3 systems")]
+    fn friedman_rejects_two_systems() {
+        let s1 = [1.0, 2.0];
+        let s2 = [2.0, 1.0];
+        friedman(&[&s1, &s2], 0.05);
     }
 
     #[test]

@@ -59,7 +59,7 @@ pub fn r_squared(y_true: &[f64], y_pred: &[f64]) -> f64 {
         .sum();
     let ss_tot: f64 = y_true.iter().map(|&t| (t - mean_y).powi(2)).sum();
     if ss_tot < 1e-15 {
-        return 0.0;
+        return if ss_res < 1e-15 { 1.0 } else { 0.0 };
     }
     1.0 - ss_res / ss_tot
 }
@@ -109,5 +109,13 @@ mod tests {
         let y_pred = [mean_val; 5];
         let r2 = r_squared(&y_true, &y_pred);
         assert!(r2.abs() < 1e-10, "expected 0.0, got {r2}");
+    }
+
+    #[test]
+    fn r_squared_constant_target_distinguishes_perfect_prediction() {
+        let y_true = [3.0, 3.0, 3.0];
+
+        assert_eq!(r_squared(&y_true, &y_true), 1.0);
+        assert_eq!(r_squared(&y_true, &[2.0, 2.0, 2.0]), 0.0);
     }
 }

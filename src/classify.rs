@@ -62,6 +62,7 @@ fn support_per_class(cm: &[Vec<u64>], n_classes: usize) -> Vec<usize> {
 
 /// Precision with the given averaging strategy.
 pub fn precision(y_true: &[usize], y_pred: &[usize], average: Average) -> f64 {
+    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     if y_true.is_empty() {
         return 0.0;
     }
@@ -80,6 +81,7 @@ pub fn precision(y_true: &[usize], y_pred: &[usize], average: Average) -> f64 {
 
 /// Recall with the given averaging strategy.
 pub fn recall(y_true: &[usize], y_pred: &[usize], average: Average) -> f64 {
+    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     if y_true.is_empty() {
         return 0.0;
     }
@@ -103,6 +105,7 @@ pub fn f1(y_true: &[usize], y_pred: &[usize], average: Average) -> f64 {
 
 /// F-beta score. `beta > 1` weights recall higher; `beta < 1` weights precision higher.
 pub fn fbeta(y_true: &[usize], y_pred: &[usize], beta: f64, average: Average) -> f64 {
+    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     if y_true.is_empty() {
         return 0.0;
     }
@@ -120,10 +123,10 @@ pub fn fbeta(y_true: &[usize], y_pred: &[usize], beta: f64, average: Average) ->
 
 /// Overall accuracy: correct predictions / total.
 pub fn accuracy(y_true: &[usize], y_pred: &[usize]) -> f64 {
+    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     if y_true.is_empty() {
         return 0.0;
     }
-    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     let correct = y_true
         .iter()
         .zip(y_pred.iter())
@@ -136,6 +139,7 @@ pub fn accuracy(y_true: &[usize], y_pred: &[usize]) -> f64 {
 ///
 /// Returns 0.0 when any denominator term is zero.
 pub fn mcc(y_true: &[usize], y_pred: &[usize]) -> f64 {
+    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     if y_true.is_empty() {
         return 0.0;
     }
@@ -394,6 +398,7 @@ pub fn log_loss(y_true: &[usize], y_prob: &[f64]) -> f64 {
 
 /// Balanced accuracy: average of per-class recall.
 pub fn balanced_accuracy(y_true: &[usize], y_pred: &[usize]) -> f64 {
+    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     if y_true.is_empty() {
         return 0.0;
     }
@@ -415,10 +420,10 @@ pub fn balanced_accuracy(y_true: &[usize], y_pred: &[usize]) -> f64 {
 
 /// Specificity (true negative rate) for binary classification.
 pub fn specificity(y_true: &[usize], y_pred: &[usize]) -> f64 {
+    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     if y_true.is_empty() {
         return 0.0;
     }
-    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     let mut tn = 0u64;
     let mut fp = 0u64;
     for (&t, &p) in y_true.iter().zip(y_pred.iter()) {
@@ -437,6 +442,7 @@ pub fn specificity(y_true: &[usize], y_pred: &[usize]) -> f64 {
 /// Cohen's kappa coefficient. Measures agreement corrected for chance.
 /// Range: -1 to 1. 1 = perfect, 0 = chance, negative = worse than chance.
 pub fn cohen_kappa(y_true: &[usize], y_pred: &[usize]) -> f64 {
+    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     if y_true.is_empty() {
         return 0.0;
     }
@@ -465,6 +471,7 @@ pub fn cohen_kappa(y_true: &[usize], y_pred: &[usize]) -> f64 {
 /// Hamming loss: fraction of labels that are incorrectly predicted.
 /// For single-label: equals `1 - accuracy`.
 pub fn hamming_loss(y_true: &[usize], y_pred: &[usize]) -> f64 {
+    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     if y_true.is_empty() {
         return 0.0;
     }
@@ -473,6 +480,7 @@ pub fn hamming_loss(y_true: &[usize], y_pred: &[usize]) -> f64 {
 
 /// Jaccard similarity coefficient (IoU) with the given averaging strategy.
 pub fn jaccard_score(y_true: &[usize], y_pred: &[usize], average: Average) -> f64 {
+    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     if y_true.is_empty() {
         return 0.0;
     }
@@ -686,8 +694,50 @@ mod tests {
 
         // MCC is 0 when all same class (no variation)
         let m = mcc(&y_true, &y_pred);
-        assert!(m.abs() < 1e-10 || m.is_nan() || (m - 0.0).abs() < 1e-10);
+        assert_eq!(m, 0.0);
     }
+
+    macro_rules! empty_left_length_mismatch_test {
+        ($name:ident, $call:expr) => {
+            #[test]
+            #[should_panic(expected = "length mismatch")]
+            fn $name() {
+                $call;
+            }
+        };
+    }
+
+    empty_left_length_mismatch_test!(precision_rejects_empty_left_mismatch, {
+        precision(&[], &[0], Average::Macro)
+    });
+    empty_left_length_mismatch_test!(recall_rejects_empty_left_mismatch, {
+        recall(&[], &[0], Average::Macro)
+    });
+    empty_left_length_mismatch_test!(f1_rejects_empty_left_mismatch, {
+        f1(&[], &[0], Average::Macro)
+    });
+    empty_left_length_mismatch_test!(fbeta_rejects_empty_left_mismatch, {
+        fbeta(&[], &[0], 2.0, Average::Macro)
+    });
+    empty_left_length_mismatch_test!(accuracy_rejects_empty_left_mismatch, {
+        accuracy(&[], &[0])
+    });
+    empty_left_length_mismatch_test!(mcc_rejects_empty_left_mismatch, { mcc(&[], &[0]) });
+    empty_left_length_mismatch_test!(balanced_accuracy_rejects_empty_left_mismatch, {
+        balanced_accuracy(&[], &[0])
+    });
+    empty_left_length_mismatch_test!(specificity_rejects_empty_left_mismatch, {
+        specificity(&[], &[0])
+    });
+    empty_left_length_mismatch_test!(cohen_kappa_rejects_empty_left_mismatch, {
+        cohen_kappa(&[], &[0])
+    });
+    empty_left_length_mismatch_test!(hamming_loss_rejects_empty_left_mismatch, {
+        hamming_loss(&[], &[0])
+    });
+    empty_left_length_mismatch_test!(jaccard_rejects_empty_left_mismatch, {
+        jaccard_score(&[], &[0], Average::Macro)
+    });
 
     #[test]
     fn test_log_loss_perfect() {
