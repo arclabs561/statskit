@@ -22,7 +22,7 @@ innr = { version = "0.6", optional = true }
 
 [features]
 serde = ["dep:serde"]
-# SIMD-accelerated f64 reductions in regression metrics (MSE, MAE, R^2).
+# SIMD-accelerated f64 reductions in regression metrics (MSE, MAE, R^2; Rust 1.89+).
 # Replaces the iterator-based fold with innr::dense_f64 reductions.
 simd = ["dep:innr"]
 

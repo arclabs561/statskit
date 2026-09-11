@@ -8,7 +8,8 @@ For non-trivial work (new APIs, features, large refactors), open an issue first 
 
 ## Setup
 
-- Rust toolchain: stable, MSRV `1.85`. Use `rustup` to manage.
+- Rust toolchain: stable. MSRV is `1.85` for the default API and `serde`,
+  or `1.89` with `simd`.
 - Optional: `cargo-nextest` for faster test runs (`cargo install cargo-nextest`).
 
 ```

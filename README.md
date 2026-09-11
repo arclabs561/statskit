@@ -85,6 +85,9 @@ scale estimation remain in those callers.
 
 ## Features
 
+The default API and `serde` support Rust 1.85. The `simd` feature requires
+Rust 1.89 or newer.
+
 - `serde`: derive `Serialize` / `Deserialize` on result structs.
 - `simd`: SIMD-accelerated `f64` reductions in the regression metrics, via `innr`.
 
