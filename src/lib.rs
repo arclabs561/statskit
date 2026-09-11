@@ -1,9 +1,11 @@
 //! # statskit
 //!
-//! Statistical judgment and evaluation.
+//! Statistical metrics and tests for plain `f64` and `usize` slices.
 //!
-//! This layer is the statistical mirror for the stack: turn "it seems better" into
-//! "it is better, under a stated metric, with assumptions stated."
+//! The crate covers classification, probability calibration, regression,
+//! descriptive statistics, system-comparison tests, and score-only conformal
+//! threshold selection. Functions that make a statistical claim state their
+//! assumptions in rustdoc.
 //!
 //! ## Contract
 //!
@@ -20,12 +22,14 @@
 //!   confusion matrix, classification report, log loss, balanced accuracy, specificity,
 //!   Cohen's kappa, Hamming loss, Jaccard score)
 //! - `calibration`: calibration metrics (Brier score, ECE, MCE, reliability diagram)
+//! - `conformal`: finite-sample score thresholds for split conformal calibration
 //! - `regression`: regression metrics (MSE, RMSE, MAE, R-squared)
 
 #![forbid(unsafe_code)]
 
 pub mod calibration;
 pub mod classify;
+pub mod conformal;
 pub mod regression;
 pub mod stats;
 

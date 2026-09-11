@@ -4,6 +4,22 @@ All notable changes to this project are documented here. Format based on [Keep a
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-11
+
+### Added
+
+- `conformal`: split-conformal rank selection for finite scalar scores, with
+  exact rational or binary floating-point levels and an explicit unbounded
+  threshold. Score construction and prediction sets remain with callers.
+
+### Fixed
+
+- Return R² of 1.0 for effectively constant targets with negligible residual
+  error, and 0.0 otherwise.
+- Reject invalid labels, probabilities, p-values and statistical-test inputs
+  instead of silently computing results. Validate binning, resampling and
+  permutation counts; preserve NaN in variance calculations.
+
 ## [0.2.0] - 2026-07-03
 
 ### Fixed
@@ -45,5 +61,8 @@ All notable changes to this project are documented here. Format based on [Keep a
 
 - Used Welford's algorithm for variance computation.
 
+[Unreleased]: https://github.com/arclabs561/statskit/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/arclabs561/statskit/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/arclabs561/statskit/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/arclabs561/statskit/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/arclabs561/statskit/releases/tag/v0.1.0

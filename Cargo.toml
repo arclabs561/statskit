@@ -1,6 +1,6 @@
 [package]
 name = "statskit"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Statistical metrics and tests"
@@ -31,3 +31,5 @@ simd = ["dep:innr"]
 # sklearn-generated reference values from JSON.
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+num-rational = "0.4"
+proptest = "1.5"
