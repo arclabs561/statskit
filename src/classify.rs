@@ -234,7 +234,7 @@ pub fn roc_curve(y_true: &[usize], y_scores: &[f64]) -> Vec<(f64, f64, f64)> {
 /// depend on input order within ties.
 fn cumulative_counts_by_threshold(y_true: &[usize], y_scores: &[f64]) -> Vec<(f64, f64, f64)> {
     let mut indices: Vec<usize> = (0..y_scores.len()).collect();
-    indices.sort_by(|&a, &b| y_scores[b].partial_cmp(&y_scores[a]).unwrap());
+    indices.sort_by(|&a, &b| y_scores[b].total_cmp(&y_scores[a]));
 
     let mut out = Vec::new();
     let mut tp = 0.0;

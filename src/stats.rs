@@ -176,7 +176,7 @@ where
         boot_stats.push(value);
     }
 
-    boot_stats.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    boot_stats.sort_by(f64::total_cmp);
 
     // Bias correction: z0
     let prop_less =
@@ -252,7 +252,7 @@ pub fn wilcoxon(a: &[f64], b: &[f64], alpha: f64) -> WilcoxonResult {
         .enumerate()
         .map(|(i, &d)| (i, d.abs()))
         .collect();
-    abs_indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    abs_indexed.sort_by(|a, b| a.1.total_cmp(&b.1));
 
     let mut ranks = vec![0.0; n];
     let mut i = 0;
@@ -447,9 +447,9 @@ fn compute_epsilon(a: &[f64], b: &[f64]) -> f64 {
     const DT: f64 = 0.005;
 
     let mut sa = a.to_vec();
-    sa.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    sa.sort_by(f64::total_cmp);
     let mut sb = b.to_vec();
-    sb.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    sb.sort_by(f64::total_cmp);
 
     let quantile = |sorted: &[f64], p: f64| -> f64 {
         let num = sorted.len();
@@ -490,7 +490,7 @@ pub fn benjamini_hochberg(p_values: &[f64]) -> Vec<f64> {
 
     let mut indexed: Vec<(usize, f64)> =
         p_values.iter().enumerate().map(|(i, &p)| (i, p)).collect();
-    indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    indexed.sort_by(|a, b| a.1.total_cmp(&b.1));
 
     let mut adjusted = vec![0.0; n];
     let mut cummin = f64::INFINITY;
@@ -557,7 +557,7 @@ pub fn rank_biserial(a: &[f64], b: &[f64]) -> f64 {
         .enumerate()
         .map(|(i, &d)| (i, d.abs()))
         .collect();
-    abs_indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    abs_indexed.sort_by(|a, b| a.1.total_cmp(&b.1));
 
     let mut ranks = vec![0.0; n];
     let mut i = 0;
@@ -710,7 +710,7 @@ pub fn friedman(scores: &[&[f64]], alpha: f64) -> FriedmanResult {
     #[allow(clippy::needless_range_loop)]
     for col_idx in 0..n {
         let mut col: Vec<(usize, f64)> = (0..k).map(|i| (i, scores[i][col_idx])).collect();
-        col.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        col.sort_by(|a, b| a.1.total_cmp(&b.1));
 
         let mut ranks = vec![0.0_f64; k];
         let mut i = 0;
@@ -790,7 +790,7 @@ pub fn mann_whitney(a: &[f64], b: &[f64], alpha: f64) -> MannWhitneyResult {
     for &v in b {
         combined.push((v, 1)); // group 1 = b
     }
-    combined.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap());
+    combined.sort_by(|x, y| x.0.total_cmp(&y.0));
 
     let n = combined.len();
     let mut ranks = vec![0.0_f64; n];
