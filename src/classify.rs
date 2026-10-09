@@ -221,29 +221,38 @@ pub fn roc_curve(y_true: &[usize], y_scores: &[f64]) -> Vec<(f64, f64, f64)> {
         return vec![(0.0, 0.0, f64::INFINITY), (1.0, 1.0, f64::NEG_INFINITY)];
     }
 
+    let mut points = vec![(0.0, 0.0, f64::INFINITY)];
+    for (threshold, tp, fp) in cumulative_counts_by_threshold(y_true, y_scores) {
+        points.push((fp / total_neg, tp / total_pos, threshold));
+    }
+    points
+}
+
+/// Cumulative `(threshold, tp, fp)` at each distinct score, in decreasing
+/// score order. Tied scores are one threshold: a tie group yields a single
+/// entry carrying the counts of the whole group, so the result does not
+/// depend on input order within ties.
+fn cumulative_counts_by_threshold(y_true: &[usize], y_scores: &[f64]) -> Vec<(f64, f64, f64)> {
     let mut indices: Vec<usize> = (0..y_scores.len()).collect();
     indices.sort_by(|&a, &b| y_scores[b].partial_cmp(&y_scores[a]).unwrap());
 
-    let mut points = Vec::new();
+    let mut out = Vec::new();
     let mut tp = 0.0;
     let mut fp = 0.0;
-
-    points.push((0.0, 0.0, f64::INFINITY));
-
-    for &i in &indices {
+    for (k, &i) in indices.iter().enumerate() {
         if y_true[i] == 1 {
             tp += 1.0;
         } else {
             fp += 1.0;
         }
-        let fpr = fp / total_neg;
-        let tpr = tp / total_pos;
-        points.push((fpr, tpr, y_scores[i]));
+        let group_ends = indices
+            .get(k + 1)
+            .is_none_or(|&next| y_scores[next] != y_scores[i]);
+        if group_ends {
+            out.push((y_scores[i], tp, fp));
+        }
     }
-
-    // Deduplicate consecutive points with same threshold
-    points.dedup_by(|a, b| (a.2 - b.2).abs() < f64::EPSILON);
-    points
+    out
 }
 
 /// Area under the ROC curve (binary classification).
@@ -268,25 +277,10 @@ pub fn pr_curve(y_true: &[usize], y_scores: &[f64]) -> Vec<(f64, f64, f64)> {
         return vec![(0.0, 0.0, f64::INFINITY)];
     }
 
-    let mut indices: Vec<usize> = (0..y_scores.len()).collect();
-    indices.sort_by(|&a, &b| y_scores[b].partial_cmp(&y_scores[a]).unwrap());
-
-    let mut points = Vec::new();
-    let mut tp = 0.0;
-    let mut fp = 0.0;
-
-    for &i in &indices {
-        if y_true[i] == 1 {
-            tp += 1.0;
-        } else {
-            fp += 1.0;
-        }
-        let prec = tp / (tp + fp);
-        let rec = tp / total_pos;
-        points.push((prec, rec, y_scores[i]));
-    }
-
-    points
+    cumulative_counts_by_threshold(y_true, y_scores)
+        .into_iter()
+        .map(|(threshold, tp, fp)| (tp / (tp + fp), tp / total_pos, threshold))
+        .collect()
 }
 
 /// Average precision (area under PR curve).
@@ -300,20 +294,10 @@ pub fn average_precision(y_true: &[usize], y_scores: &[f64]) -> f64 {
         return 0.0;
     }
 
-    let mut indices: Vec<usize> = (0..y_scores.len()).collect();
-    indices.sort_by(|&a, &b| y_scores[b].partial_cmp(&y_scores[a]).unwrap());
-
-    let mut tp = 0.0;
-    let mut fp = 0.0;
     let mut ap = 0.0;
     let mut prev_recall = 0.0;
 
-    for &i in &indices {
-        if y_true[i] == 1 {
-            tp += 1.0;
-        } else {
-            fp += 1.0;
-        }
+    for (_, tp, fp) in cumulative_counts_by_threshold(y_true, y_scores) {
         let prec = tp / (tp + fp);
         let rec = tp / total_pos;
         // Trapezoidal integration over recall
@@ -742,6 +726,45 @@ mod tests {
         let y_scores = [0.1, 0.2, 0.8, 0.9];
         let ap = average_precision(&y_true, &y_scores);
         assert!((ap - 1.0).abs() < 1e-10);
+    }
+
+    // Tied scores form one threshold: the ROC/PR point after a tie group uses
+    // the cumulative counts of the whole group. Expected values are
+    // sklearn's roc_auc_score / average_precision_score on the same inputs.
+
+    #[test]
+    fn roc_auc_pure_tie_is_half() {
+        for y_true in [[0, 1], [1, 0]] {
+            assert!((roc_auc(&y_true, &[0.5, 0.5]) - 0.5).abs() < 1e-12);
+            assert!((average_precision(&y_true, &[0.5, 0.5]) - 0.5).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn roc_auc_partial_tie_gives_half_credit() {
+        let y_true = [0, 1, 0, 1];
+        let y_scores = [1.0, 2.0, 2.0, 3.0];
+        assert!((roc_auc(&y_true, &y_scores) - 0.875).abs() < 1e-12);
+        assert!((average_precision(&y_true, &y_scores) - 5.0 / 6.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn ranking_metrics_ignore_order_within_ties() {
+        let y_true = [1, 0, 0, 1, 1, 0];
+        let y_scores = [0.7, 0.7, 0.3, 0.3, 0.9, 0.1];
+        let y_true_swapped = [0, 1, 1, 0, 1, 0];
+        let y_scores_swapped = [0.7, 0.7, 0.3, 0.3, 0.9, 0.1];
+        assert_eq!(
+            roc_auc(&y_true, &y_scores),
+            roc_auc(&y_true_swapped, &y_scores_swapped)
+        );
+        assert_eq!(
+            average_precision(&y_true, &y_scores),
+            average_precision(&y_true_swapped, &y_scores_swapped)
+        );
+        // One curve point per distinct threshold, plus the ROC origin.
+        assert_eq!(roc_curve(&y_true, &y_scores).len(), 5);
+        assert_eq!(pr_curve(&y_true, &y_scores).len(), 4);
     }
 
     #[test]

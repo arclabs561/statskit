@@ -20,6 +20,17 @@ struct Fixture {
     datasets: Datasets,
     expected: Expected,
     confusion_multi: Vec<Vec<u64>>,
+    tied: Vec<TiedCase>,
+}
+
+/// Ranking-metric inputs with tied scores, and sklearn's values for them.
+#[derive(Deserialize)]
+struct TiedCase {
+    name: String,
+    y_true: Vec<usize>,
+    y_score: Vec<f64>,
+    roc_auc: f64,
+    average_precision: f64,
 }
 
 #[derive(Deserialize)]
@@ -165,4 +176,22 @@ fn rosetta_classify_matches_sklearn() {
     // Confusion matrix is an exact integer match (cm[true][pred]).
     let cm = statskit::confusion_matrix(&m.y_true, &m.y_pred, m.n_classes);
     assert_eq!(cm, fx.confusion_multi, "confusion_multi");
+}
+
+#[test]
+fn rosetta_tied_scores_match_sklearn() {
+    let fx: Fixture = serde_json::from_str(FIXTURE).expect("parse rosetta fixture");
+    assert!(!fx.tied.is_empty(), "fixture has no tied cases");
+    for case in &fx.tied {
+        close(
+            statskit::roc_auc(&case.y_true, &case.y_score),
+            case.roc_auc,
+            &format!("tied/{}/roc_auc", case.name),
+        );
+        close(
+            statskit::average_precision(&case.y_true, &case.y_score),
+            case.average_precision,
+            &format!("tied/{}/average_precision", case.name),
+        );
+    }
 }

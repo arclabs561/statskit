@@ -40,14 +40,14 @@ from sklearn.metrics import (
 SEED = 0
 rng = np.random.default_rng(SEED)
 
-# Binary dataset. Distinct scores (no ties) so ROC/PR curve construction is
-# unambiguous across implementations. Probabilities kept inside (0.02, 0.98) so
-# neither statskit's nor sklearn's log-loss epsilon clip activates.
+# Binary dataset. Probabilities kept inside (0.02, 0.98) so neither statskit's
+# nor sklearn's log-loss epsilon clip activates. Tied scores are covered by the
+# separate `tied` cases below rather than jittered away: ties are where ROC/PR
+# construction can go wrong.
 n_bin = 50
 bin_y_true = rng.integers(0, 2, size=n_bin)
 bin_signal = bin_y_true * 0.8 + rng.normal(0.0, 0.6, size=n_bin)
-# Make every score distinct.
-bin_y_score = bin_signal + np.linspace(0, 1e-6, n_bin)
+bin_y_score = bin_signal
 bin_y_pred = (bin_y_score > np.median(bin_y_score)).astype(int)
 bin_y_prob = np.clip(1.0 / (1.0 + np.exp(-bin_signal)), 0.02, 0.98)
 
@@ -82,6 +82,25 @@ expected = {
     "jaccard_macro_multi": jaccard_score(multi_y_true, multi_y_pred, average="macro"),
 }
 
+# Tied-score cases for the ranking metrics. sklearn treats tied scores as one
+# threshold (half credit for tied positive/negative pairs in ROC AUC).
+tied_inputs = [
+    ("pure_tie", [0, 1], [0.5, 0.5]),
+    ("partial_tie", [0, 1, 0, 1], [1.0, 2.0, 2.0, 3.0]),
+    ("all_tied", bin_y_true.tolist(), [0.25] * n_bin),
+    ("bin_rounded", bin_y_true.tolist(), np.round(bin_signal, 1).tolist()),
+]
+tied = [
+    {
+        "name": name,
+        "y_true": list(map(int, y)),
+        "y_score": list(map(float, s)),
+        "roc_auc": float(roc_auc_score(y, s)),
+        "average_precision": float(average_precision_score(y, s)),
+    }
+    for name, y, s in tied_inputs
+]
+
 confusion_multi = confusion_matrix(
     multi_y_true, multi_y_pred, labels=list(range(n_classes))
 ).tolist()
@@ -111,10 +130,13 @@ fixture = {
     },
     "expected": {k: float(v) for k, v in expected.items()},
     "confusion_multi": confusion_multi,
+    "tied": tied,
 }
 
 out = Path(__file__).parent / "statskit_classify.json"
 out.write_text(json.dumps(fixture, indent=2) + "\n")
 for k, v in expected.items():
     print(f"{k:28s} {v:.12f}")
+for case in tied:
+    print(f"tied/{case['name']:23s} auc={case['roc_auc']:.12f} ap={case['average_precision']:.12f}")
 print(f"\nwrote {out}")
