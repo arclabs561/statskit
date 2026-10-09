@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Format based on [Keep a
 
 ## [Unreleased]
 
+### Fixed
+
+- `roc_curve`, `roc_auc`, `pr_curve` and `average_precision` treat tied
+  scores as one threshold, matching scikit-learn. A pure tie now gives AUC
+  0.5 (was 0), and partial ties no longer inflate AUC. `pr_curve` returns
+  one point per distinct threshold.
+- `permutation_test` reports `(b + 1) / (m + 1)`, so the p-value is never 0.
+- `wilcoxon` applies the tie correction to the normal-approximation
+  variance, matching `scipy.stats.wilcoxon(method="approx")`.
+
 ## [0.3.0] - 2026-09-11
 
 ### Added

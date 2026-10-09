@@ -287,7 +287,20 @@ pub fn wilcoxon(a: &[f64], b: &[f64], alpha: f64) -> WilcoxonResult {
     // Normal approximation
     let n_f = n as f64;
     let mean_w = n_f * (n_f + 1.0) / 4.0;
-    let var_w = n_f * (n_f + 1.0) * (2.0 * n_f + 1.0) / 24.0;
+    // Tie-corrected variance (scipy's asymptotic method): averaged ranks
+    // shrink the variance by sum(t^3 - t) / 48 over tie groups.
+    let mut tie_term = 0.0f64;
+    let mut i = 0;
+    while i < n {
+        let mut j = i;
+        while j < n && (abs_indexed[j].1 - abs_indexed[i].1).abs() < 1e-15 {
+            j += 1;
+        }
+        let t = (j - i) as f64;
+        tie_term += t * t * t - t;
+        i = j;
+    }
+    let var_w = n_f * (n_f + 1.0) * (2.0 * n_f + 1.0) / 24.0 - tie_term / 48.0;
 
     let z = if var_w > 0.0 {
         (w - mean_w).abs() / var_w.sqrt()
@@ -305,8 +318,10 @@ pub fn wilcoxon(a: &[f64], b: &[f64], alpha: f64) -> WilcoxonResult {
 
 /// Permutation test for comparing two paired score vectors.
 ///
-/// `statistic` computes the test statistic. p-value is the proportion of
-/// permuted statistics with absolute value >= |observed|.
+/// `statistic` computes the test statistic. The p-value is
+/// `(b + 1) / (m + 1)`, where `b` counts the `m` permuted statistics with
+/// absolute value >= |observed|. Counting the observed labelling keeps the
+/// Monte Carlo p-value valid and never 0 (Phipson & Smyth, 2010).
 pub fn permutation_test<F>(
     a: &[f64],
     b: &[f64],
@@ -348,7 +363,7 @@ where
         }
     }
 
-    let p_value = count_extreme as f64 / n_permutations as f64;
+    let p_value = (count_extreme + 1) as f64 / (n_permutations + 1) as f64;
     PermutationResult {
         observed,
         p_value,
@@ -1092,6 +1107,50 @@ mod tests {
         let b = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
         let result = permutation_test(&a, &b, 5000, mean_diff, Some(42));
         assert!(result.significant, "p={}", result.p_value);
+    }
+
+    /// Phipson & Smyth (2010): with Monte Carlo permutations the p-value is
+    /// (b + 1) / (m + 1), counting the observed labelling, so it is never 0.
+    #[test]
+    fn permutation_p_value_is_never_zero() {
+        let a = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0];
+        let b = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        let m = 200;
+        for seed in 0..20 {
+            let result = permutation_test(&a, &b, m, mean_diff, Some(seed));
+            assert!(result.p_value > 0.0, "seed {seed}: p = 0");
+            let count_plus_one = result.p_value * (m + 1) as f64;
+            assert!(
+                (count_plus_one - count_plus_one.round()).abs() < 1e-9 && count_plus_one >= 1.0,
+                "seed {seed}: p = {} is not (b + 1) / (m + 1)",
+                result.p_value
+            );
+        }
+    }
+
+    /// Ranks are averaged over ties, so the normal-approximation variance
+    /// must subtract sum(t^3 - t) / 48 over tie groups. Expected p-values are
+    /// scipy.stats.wilcoxon(d, method="approx", correction=False).
+    #[test]
+    fn wilcoxon_variance_is_tie_corrected() {
+        let cases: [(&[f64], f64); 2] = [
+            (
+                &[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0],
+                0.05777957112359726,
+            ),
+            (
+                &[
+                    1.0, 2.0, 2.0, 3.0, 3.0, 3.0, -1.0, -2.0, 4.0, 4.0, 5.0, -5.0, 6.0, 6.0, 6.0,
+                    6.0, 7.0, 8.0, -8.0, 9.0, 10.0, 11.0,
+                ],
+                0.003089745790754137,
+            ),
+        ];
+        for (d, want) in cases {
+            let zeros = vec![0.0; d.len()];
+            let got = wilcoxon(d, &zeros, 0.05).p_value;
+            assert!((got - want).abs() < 1e-6, "p = {got}, scipy = {want}");
+        }
     }
 
     #[test]
