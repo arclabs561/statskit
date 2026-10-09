@@ -25,6 +25,7 @@
 //! - `conformal`: finite-sample score thresholds for split conformal calibration
 //! - `regression`: regression metrics (MSE, RMSE, MAE, R-squared)
 
+#![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 
 pub mod calibration;

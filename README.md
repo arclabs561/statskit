@@ -10,6 +10,9 @@ calibration metrics, conformal thresholds, regression, descriptive statistics,
 and paired or unpaired system comparison tests. Optional features add serde
 support and SIMD reductions.
 
+For probability distributions and special functions, use `statrs`; `statskit`
+covers evaluation metrics and system-comparison tests on plain slices.
+
 ## Quickstart
 
 ```toml
