@@ -43,6 +43,9 @@ pub fn mae(y_true: &[f64], y_pred: &[f64]) -> f64 {
 ///
 /// Returns 1.0 for perfect predictions. Can be negative when the model is
 /// worse than predicting the mean.
+/// When the total sum of squares is zero, returns 1.0 if the residual sum of
+/// squares is also zero, and 0.0 otherwise. No absolute tolerance is applied:
+/// small nonzero variance still uses the usual ratio of sums of squares.
 pub fn r_squared(y_true: &[f64], y_pred: &[f64]) -> f64 {
     assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     if y_true.is_empty() {
@@ -58,8 +61,8 @@ pub fn r_squared(y_true: &[f64], y_pred: &[f64]) -> f64 {
         .map(|(&t, &p)| (t - p).powi(2))
         .sum();
     let ss_tot: f64 = y_true.iter().map(|&t| (t - mean_y).powi(2)).sum();
-    if ss_tot < 1e-15 {
-        return if ss_res < 1e-15 { 1.0 } else { 0.0 };
+    if ss_tot == 0.0 {
+        return if ss_res == 0.0 { 1.0 } else { 0.0 };
     }
     1.0 - ss_res / ss_tot
 }
