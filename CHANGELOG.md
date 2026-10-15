@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Source history (unversioned)
+
+These source changes are listed without assigning them to a published release.
+
+### Fixed
+
+- Remove the absolute tolerance from R² constant-target detection. Small nonzero sums of squares use the usual ratio; zero target variance returns 1 only when the residual sum of squares is also zero. This does not remove floating-point underflow or overflow limits.
+  ([source change](https://github.com/arclabs561/statskit/commit/9fab9c9b3dabf9b177a14f929a7210288ca436bf))
+
 ## [Unreleased]
 
 ### Fixed
