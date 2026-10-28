@@ -1,6 +1,6 @@
 # Contributing to statskit
 
-Thanks for your interest. statskit is statistical judgment and evaluation: classification metrics, calibration, bootstrap, and system comparison.
+statskit provides statistical metrics and tests.
 
 ## Before you start
 
