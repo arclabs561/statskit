@@ -3,7 +3,8 @@
 pub enum Average {
     /// Global TP/FP/FN across all classes.
     Micro,
-    /// Per-class metric, then unweighted mean.
+    /// Per-class metric, then unweighted mean over the labels that occur
+    /// in `y_true` or `y_pred`.
     Macro,
     /// Per-class metric, weighted by support (true count).
     Weighted,
@@ -419,7 +420,9 @@ pub fn log_loss(y_true: &[usize], y_prob: &[f64]) -> f64 {
     sum / n
 }
 
-/// Balanced accuracy: average of per-class recall.
+/// Balanced accuracy: average of per-class recall over the classes present
+/// in `y_true`. Classes that occur only in `y_pred` have no recall and are
+/// not averaged (matching scikit-learn's `balanced_accuracy_score`).
 pub fn balanced_accuracy(y_true: &[usize], y_pred: &[usize]) -> f64 {
     assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
     if y_true.is_empty() {
@@ -428,17 +431,12 @@ pub fn balanced_accuracy(y_true: &[usize], y_pred: &[usize]) -> f64 {
     let n_classes = n_classes_from(y_true, y_pred);
     let cm = confusion_matrix(y_true, y_pred, n_classes);
     let stats = per_class_tp_fp_fn(&cm, n_classes);
-    let sum_recall: f64 = stats
+    let recalls: Vec<f64> = stats
         .iter()
-        .map(|&(tp, _fp, fn_)| {
-            if tp + fn_ == 0 {
-                0.0
-            } else {
-                tp as f64 / (tp + fn_) as f64
-            }
-        })
-        .sum();
-    sum_recall / n_classes as f64
+        .filter(|&&(tp, _fp, fn_)| tp + fn_ > 0)
+        .map(|&(tp, _fp, fn_)| tp as f64 / (tp + fn_) as f64)
+        .collect();
+    recalls.iter().sum::<f64>() / recalls.len() as f64
 }
 
 /// Specificity (true negative rate) for binary classification.
@@ -535,7 +533,6 @@ fn compute_averaged(
     average: Average,
     metric_fn: impl Fn(u64, u64, u64) -> f64,
 ) -> f64 {
-    let n_classes = stats.len();
     match average {
         Average::Micro => {
             let (total_tp, total_fp, total_fn) = stats
@@ -546,11 +543,17 @@ fn compute_averaged(
             metric_fn(total_tp, total_fp, total_fn)
         }
         Average::Macro => {
-            let sum: f64 = stats
+            // Average over labels that occur in y_true or y_pred; a label id
+            // below the maximum that never occurs is not a class.
+            let present: Vec<f64> = stats
                 .iter()
+                .filter(|&&(tp, fp, fn_)| tp + fp + fn_ > 0)
                 .map(|&(tp, fp, fn_)| metric_fn(tp, fp, fn_))
-                .sum();
-            sum / n_classes as f64
+                .collect();
+            if present.is_empty() {
+                return 0.0;
+            }
+            present.iter().sum::<f64>() / present.len() as f64
         }
         Average::Weighted => {
             let total_support: usize = supports.iter().sum();
@@ -882,6 +885,39 @@ mod tests {
         // Class 0 recall = 1.0, Class 1 recall = 0.0 -> balanced = 0.5
         let ba = balanced_accuracy(&y_true, &y_pred);
         assert!((ba - 0.5).abs() < 1e-10, "expected 0.5, got {ba}");
+    }
+
+    /// Balanced accuracy is the mean recall over classes present in
+    /// `y_true`. Class 2 appears only in `y_pred`, so the mean is over
+    /// classes 0 and 1: (1 + 1/2) / 2 = 0.75
+    /// (sklearn.metrics.balanced_accuracy_score).
+    #[test]
+    fn balanced_accuracy_ignores_prediction_only_classes() {
+        let y_true = [0usize, 0, 1, 1];
+        let y_pred = [0usize, 0, 1, 2];
+        let ba = balanced_accuracy(&y_true, &y_pred);
+        assert!((ba - 0.75).abs() < 1e-12, "balanced accuracy = {ba}");
+    }
+
+    /// Macro averages run over labels that occur in `y_true` or `y_pred`.
+    /// Label 1 occurs in neither slice, so a perfect prediction on {0, 2}
+    /// scores 1.0 (sklearn `average="macro"`).
+    #[test]
+    fn macro_average_ignores_labels_absent_from_both_slices() {
+        let y_true = [0usize, 2, 2, 0];
+        let y_pred = [0usize, 2, 2, 0];
+        for (name, v) in [
+            ("precision", precision(&y_true, &y_pred, Average::Macro)),
+            ("recall", recall(&y_true, &y_pred, Average::Macro)),
+            ("f1", f1(&y_true, &y_pred, Average::Macro)),
+            ("jaccard", jaccard_score(&y_true, &y_pred, Average::Macro)),
+        ] {
+            assert!((v - 1.0).abs() < 1e-12, "macro {name} = {v}");
+        }
+        // Label 1 predicted but never true still counts (precision 0 for it):
+        // per-class precision {1, 0, 1} -> 2/3.
+        let p = precision(&[0usize, 2, 2], &[0usize, 2, 1], Average::Macro);
+        assert!((p - 2.0 / 3.0).abs() < 1e-12, "macro precision = {p}");
     }
 
     #[test]

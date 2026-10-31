@@ -226,9 +226,34 @@ where
     }
 }
 
+/// Largest number of nonzero differences for which [`wilcoxon`] uses the
+/// exact null distribution.
+const WILCOXON_EXACT_MAX_N: usize = 20;
+
+/// Two-sided exact p-value of the signed-rank statistic `w = min(W+, W-)`
+/// for ranks `1..=n`: `2 * P(W <= w)` under the null that every sign
+/// assignment is equally likely, capped at 1.
+fn wilcoxon_exact_p(n: usize, w: usize) -> f64 {
+    let max_sum = n * (n + 1) / 2;
+    // counts[s] = number of subsets of {1..=r} with rank sum s.
+    let mut counts = vec![0.0_f64; max_sum + 1];
+    counts[0] = 1.0;
+    for r in 1..=n {
+        for s in (r..=max_sum).rev() {
+            counts[s] += counts[s - r];
+        }
+    }
+    let total = 2.0_f64.powi(n as i32);
+    let cdf: f64 = counts[..=w.min(max_sum)].iter().sum::<f64>() / total;
+    (2.0 * cdf).min(1.0)
+}
+
 /// Wilcoxon signed-rank test (paired, non-parametric).
 ///
-/// Uses normal approximation for n > 20.
+/// Zero differences are dropped. With at most 20 nonzero differences and
+/// no tied absolute differences, the p-value comes from the exact null
+/// distribution; otherwise it uses the tie-corrected normal approximation.
+/// Both match `scipy.stats.wilcoxon` with the corresponding `method`.
 pub fn wilcoxon(a: &[f64], b: &[f64], alpha: f64) -> WilcoxonResult {
     assert_eq!(a.len(), b.len(), "length mismatch");
     assert_finite_samples(a);
@@ -302,12 +327,17 @@ pub fn wilcoxon(a: &[f64], b: &[f64], alpha: f64) -> WilcoxonResult {
     }
     let var_w = n_f * (n_f + 1.0) * (2.0 * n_f + 1.0) / 24.0 - tie_term / 48.0;
 
-    let z = if var_w > 0.0 {
-        (w - mean_w).abs() / var_w.sqrt()
+    let p_value = if n <= WILCOXON_EXACT_MAX_N && tie_term == 0.0 {
+        // Without ties the ranks are 1..=n and w is an integer.
+        wilcoxon_exact_p(n, w as usize)
     } else {
-        0.0
+        let z = if var_w > 0.0 {
+            (w - mean_w).abs() / var_w.sqrt()
+        } else {
+            0.0
+        };
+        2.0 * (1.0 - normal_cdf(z))
     };
-    let p_value = 2.0 * (1.0 - normal_cdf(z));
 
     WilcoxonResult {
         statistic: w,
@@ -692,8 +722,9 @@ pub struct FriedmanResult {
 ///
 /// `scores[i][j]` = score of system i on dataset j. All inner slices must
 /// have the same length n. Ranks each column independently, computes
-/// chi-squared statistic from rank sums. p-value from chi-squared with k-1 df
-/// (normal approximation via Wilson-Hilferty).
+/// chi-squared statistic from rank sums, corrected for within-column ties.
+/// p-value from chi-squared with k-1 df (normal approximation via
+/// Wilson-Hilferty).
 pub fn friedman(scores: &[&[f64]], alpha: f64) -> FriedmanResult {
     let k = scores.len();
     assert!(k >= 3, "need at least 3 systems");
@@ -706,6 +737,8 @@ pub fn friedman(scores: &[&[f64]], alpha: f64) -> FriedmanResult {
 
     // Rank each column (dataset) independently
     let mut rank_sums = vec![0.0_f64; k];
+    // sum(t^3 - t) over within-column tie groups, for the tie correction.
+    let mut tie_term = 0.0_f64;
 
     #[allow(clippy::needless_range_loop)]
     for col_idx in 0..n {
@@ -723,6 +756,8 @@ pub fn friedman(scores: &[&[f64]], alpha: f64) -> FriedmanResult {
             for idx in i..end {
                 ranks[col[idx].0] = avg_rank;
             }
+            let t = (end - i) as f64;
+            tie_term += t * t * t - t;
             i = end;
         }
 
@@ -743,7 +778,15 @@ pub fn friedman(scores: &[&[f64]], alpha: f64) -> FriedmanResult {
         })
         .sum();
 
-    let statistic = 12.0 * n_f / (k_f * (k_f + 1.0)) * ss;
+    // Averaged ranks shrink the variance; divide by
+    // 1 - sum(t^3 - t) / (n k (k^2 - 1)), as scipy.stats.friedmanchisquare
+    // does. When every column is fully tied, ss is 0 and so is the statistic.
+    let tie_correction = 1.0 - tie_term / (n_f * k_f * (k_f * k_f - 1.0));
+    let statistic = if tie_correction > 0.0 {
+        12.0 * n_f / (k_f * (k_f + 1.0)) * ss / tie_correction
+    } else {
+        0.0
+    };
 
     // p-value from chi-squared with k-1 df using Wilson-Hilferty approximation
     let df = k_f - 1.0;
@@ -1151,6 +1194,39 @@ mod tests {
             let got = wilcoxon(d, &zeros, 0.05).p_value;
             assert!((got - want).abs() < 1e-6, "p = {got}, scipy = {want}");
         }
+    }
+
+    /// Small samples without ties use the exact null distribution of W
+    /// (each of the 2^n sign assignments equally likely). All five
+    /// differences positive: p = 2 * (1 / 32) = 0.0625. Signs (+, +, +, -, +)
+    /// on ranks 1..5: W- = 4, and 7 of the 32 subsets of {1..5} sum to <= 4,
+    /// so p = 2 * 7 / 32 = 0.4375. Both match scipy.stats.wilcoxon(d).
+    #[test]
+    fn wilcoxon_small_n_is_exact() {
+        let zeros = [0.0; 5];
+        let r = wilcoxon(&[1.0, 2.0, 3.0, 4.0, 5.0], &zeros, 0.05);
+        assert!((r.p_value - 0.0625).abs() < 1e-12, "p = {}", r.p_value);
+        assert!(!r.significant);
+        let r = wilcoxon(&[1.0, 2.0, 3.0, -4.0, 5.0], &zeros, 0.05);
+        assert_eq!(r.statistic, 4.0);
+        assert!((r.p_value - 0.4375).abs() < 1e-12, "p = {}", r.p_value);
+    }
+
+    /// Within-block ties divide the Friedman statistic by
+    /// 1 - sum(t^3 - t) / (n k (k^2 - 1)). Here four of five blocks hold one
+    /// tied pair: the uncorrected statistic is 0.7 and the correction factor
+    /// 1 - 24 / 120 = 0.8, giving 0.875 (scipy.stats.friedmanchisquare).
+    #[test]
+    fn friedman_statistic_is_tie_corrected() {
+        let s1 = [1.0, 2.0, 3.0, 1.0, 2.0];
+        let s2 = [1.0, 2.0, 1.0, 2.0, 2.0];
+        let s3 = [2.0, 1.0, 2.0, 2.0, 3.0];
+        let r = friedman(&[&s1, &s2, &s3], 0.05);
+        assert!(
+            (r.statistic - 0.875).abs() < 1e-9,
+            "statistic = {}",
+            r.statistic
+        );
     }
 
     #[test]
