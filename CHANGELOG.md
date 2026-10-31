@@ -9,6 +9,14 @@ All notable changes to this project are documented here. Format based on [Keep a
 - `wilcoxon`, `friedman`, `balanced_accuracy` and macro-averaged
   classification metrics can return different values; signatures are
   unchanged.
+- Behaviour change: `bootstrap_bca` computes `BootstrapResult::p_value` as
+  `min(1, 2 (b + 1) / (B + 1))`, where `b` counts the `B` resampled
+  statistics on the other side of zero (Davison and Hinkley 1997; Phipson
+  and Smyth 2010). It was `2 b / B` and returned exactly 0 when no resample
+  crossed zero, as in the README example. The field is documented as
+  unreliable for small samples.
+- The README quickstart takes its p-value from the exact `wilcoxon` test
+  instead of the bootstrap.
 
 ### Fixed
 

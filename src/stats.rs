@@ -115,6 +115,13 @@ pub struct BootstrapResult {
     pub point_estimate: f64,
     pub lower: f64,
     pub upper: f64,
+    /// Two-sided bootstrap p-value, `min(1, 2 (b + 1) / (B + 1))`, where `b`
+    /// counts the `B` resampled statistics on the other side of zero.
+    ///
+    /// Unreliable for small samples: with few pairs the resamples cannot
+    /// cross zero however weak the evidence, so the value mostly reflects
+    /// `B`. For a p-value, prefer [`permutation_test`] or the exact
+    /// [`wilcoxon`].
     pub p_value: f64,
 }
 
@@ -139,6 +146,8 @@ pub struct PermutationResult {
 /// BCa (bias-corrected and accelerated) bootstrap confidence interval.
 ///
 /// `statistic` computes the test statistic from paired score vectors.
+/// See [`BootstrapResult::p_value`] for how the p-value is computed and why it
+/// is unreliable for small samples.
 pub fn bootstrap_bca<F>(
     scores_a: &[f64],
     scores_b: &[f64],
@@ -210,13 +219,15 @@ where
     let lo_idx = lo_idx.min(config.n_resamples - 1);
     let hi_idx = hi_idx.min(config.n_resamples - 1);
 
-    // Two-sided p-value: proportion of bootstrap stats on the other side of zero
-    let p_value = if observed >= 0.0 {
-        2.0 * boot_stats.iter().filter(|&&s| s <= 0.0).count() as f64 / config.n_resamples as f64
+    // Two-sided p-value: 2 (b + 1) / (B + 1), where b counts the B bootstrap
+    // stats on the other side of zero. The +1 keeps it above 0 (Davison &
+    // Hinkley 1997; Phipson & Smyth 2010).
+    let other_side = if observed >= 0.0 {
+        boot_stats.iter().filter(|&&s| s <= 0.0).count()
     } else {
-        2.0 * boot_stats.iter().filter(|&&s| s >= 0.0).count() as f64 / config.n_resamples as f64
-    }
-    .min(1.0);
+        boot_stats.iter().filter(|&&s| s >= 0.0).count()
+    };
+    let p_value = (2.0 * (other_side + 1) as f64 / (config.n_resamples + 1) as f64).min(1.0);
 
     BootstrapResult {
         point_estimate: observed,
@@ -1117,6 +1128,19 @@ mod tests {
             seed: Some(42),
         };
         bootstrap_bca(&[1.0], &[2.0], mean_diff, config);
+    }
+
+    #[test]
+    fn bootstrap_p_value_counts_observed_resample() {
+        // Every resample of these differences is positive, so b = 0 and the
+        // two-sided p-value is 2 (0 + 1) / (99 + 1) = 0.02, never 0.
+        let config = BootstrapConfig {
+            n_resamples: 99,
+            alpha: 0.05,
+            seed: Some(1),
+        };
+        let r = bootstrap_bca(&[1.0, 2.0, 3.0], &[0.0, 0.0, 0.0], mean_diff, config);
+        assert!((r.p_value - 0.02).abs() < 1e-12, "p = {}", r.p_value);
     }
 
     #[test]
