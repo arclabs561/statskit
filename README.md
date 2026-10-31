@@ -16,7 +16,8 @@ statskit = "0.3"
 
 ```rust
 use statskit::{
-    accuracy, bootstrap_bca, cohens_d, f1, mean_diff, mse, Average, BootstrapConfig,
+    accuracy, bootstrap_bca, cohens_d, f1, mean_diff, mse, wilcoxon, Average,
+    BootstrapConfig,
 };
 
 // Classification: parallel integer label slices.
@@ -33,11 +34,20 @@ assert!((err - 0.02).abs() < 1e-12);
 
 // Compare systems by effect size and a bootstrap CI on their mean difference.
 let a = [0.81, 0.79, 0.88, 0.90, 0.85];
-let b = [0.74, 0.71, 0.80, 0.77, 0.69];
+let b = [0.74, 0.70, 0.80, 0.77, 0.69];
 let d = cohens_d(&a, &b);
+assert!(d > 0.0);
 let ci = bootstrap_bca(&a, &b, mean_diff, BootstrapConfig::default());
-// ci.point_estimate, ci.lower, ci.upper, ci.p_value
+assert!(ci.lower <= ci.point_estimate && ci.point_estimate <= ci.upper);
+
+// With five pairs, take the p-value from an exact test: all five differences
+// favour `a`, and the smallest two-sided p-value is 2 / 2^5 = 0.0625.
+let w = wilcoxon(&a, &b, 0.05);
+assert!((w.p_value - 0.0625).abs() < 1e-12);
 ```
+
+`BootstrapResult::p_value` is unreliable for small samples; prefer
+`permutation_test` or the exact `wilcoxon` for a p-value.
 
 See the [API reference](https://docs.rs/statskit) for the full set of metrics and tests.
 
