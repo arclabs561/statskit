@@ -4,6 +4,27 @@ All notable changes to this project are documented here. Format based on [Keep a
 
 ## [Unreleased]
 
+### Changed
+
+- `wilcoxon`, `friedman`, `balanced_accuracy` and macro-averaged
+  classification metrics can return different values; signatures are
+  unchanged.
+
+### Fixed
+
+- `wilcoxon` uses the exact null distribution for at most 20 nonzero,
+  untied differences, as documented. Five positive differences now give
+  p = 0.0625 (was 0.043 from the normal approximation), matching
+  `scipy.stats.wilcoxon`.
+- `friedman` divides the statistic by the tie correction
+  `1 - sum(t^3 - t) / (n k (k^2 - 1))`, matching
+  `scipy.stats.friedmanchisquare`.
+- `Average::Macro` averages over labels that occur in `y_true` or `y_pred`,
+  not over every id up to the largest label. A perfect prediction on labels
+  {0, 2} now scores 1.0 (was 0.667), matching scikit-learn.
+- `balanced_accuracy` averages recall over classes present in `y_true`
+  only; classes seen only in predictions no longer count as recall 0.
+
 ## 0.3.1 - Pending publication
 
 ### Changed
