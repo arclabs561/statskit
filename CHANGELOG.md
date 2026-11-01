@@ -4,6 +4,8 @@ All notable changes to this project are documented here. Format based on [Keep a
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-01
+
 ### Changed
 
 - `wilcoxon`, `friedman`, `balanced_accuracy` and macro-averaged
@@ -17,6 +19,14 @@ All notable changes to this project are documented here. Format based on [Keep a
   unreliable for small samples.
 - The README quickstart takes its p-value from the exact `wilcoxon` test
   instead of the bootstrap.
+- Corrected ranking metrics and statistical tests can return different numeric
+  results. ROC/PR curves group tied scores into distinct thresholds, so curve
+  lengths can change; public function signatures are unchanged.
+- Classification and statistical sorting uses floating-point total ordering.
+  This does not broaden the supported input domains or guarantee meaningful
+  results for nonfinite data.
+- Update README examples and documentation links, and add a bounded BCa
+  interval coverage regression.
 
 ### Fixed
 
@@ -32,22 +42,6 @@ All notable changes to this project are documented here. Format based on [Keep a
   {0, 2} now scores 1.0 (was 0.667), matching scikit-learn.
 - `balanced_accuracy` averages recall over classes present in `y_true`
   only; classes seen only in predictions no longer count as recall 0.
-
-## 0.3.1 - Pending publication
-
-### Changed
-
-- Corrected ranking metrics and statistical tests can return different numeric
-  results. ROC/PR curves group tied scores into distinct thresholds, so curve
-  lengths can change; public function signatures are unchanged.
-- Classification and statistical sorting uses floating-point total ordering.
-  This does not broaden the supported input domains or guarantee meaningful
-  results for nonfinite data.
-- Update README examples and documentation links, and add a bounded BCa
-  interval coverage regression.
-
-### Fixed
-
 - `roc_curve`, `roc_auc`, `pr_curve` and `average_precision` treat tied
   scores as one threshold, matching scikit-learn. A pure tie now gives AUC
   0.5 (was 0), and partial ties no longer inflate AUC. `pr_curve` returns
@@ -116,7 +110,8 @@ All notable changes to this project are documented here. Format based on [Keep a
 
 - Used Welford's algorithm for variance computation.
 
-[Unreleased]: https://github.com/arclabs561/statskit/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/arclabs561/statskit/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/arclabs561/statskit/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/arclabs561/statskit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/arclabs561/statskit/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/arclabs561/statskit/compare/v0.1.0...v0.1.1
