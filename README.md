@@ -11,7 +11,7 @@ Statistical metrics and tests.
 
 ```toml
 [dependencies]
-statskit = "0.3"
+statskit = "0.3.1"
 ```
 
 ```rust
@@ -50,6 +50,27 @@ assert!((w.p_value - 0.0625).abs() < 1e-12);
 `permutation_test` or the exact `wilcoxon` for a p-value.
 
 See the [API reference](https://docs.rs/statskit) for the full set of metrics and tests.
+
+`examples/classification_eval.rs` runs a full binary-classification evaluation:
+
+```bash
+cargo run --example classification_eval
+```
+
+```text
+=== Probabilistic Metrics ===
+Log loss:          0.3459
+ROC AUC:           0.9600
+Average precision: 0.9667
+
+=== Calibration ===
+Brier score:       0.1017
+ECE (10 bins):     0.2650
+MCE (10 bins):     0.6000
+
+=== System Comparison (McNemar) ===
+b=3, c=1, chi2=0.2500, p=0.6171, significant=false
+```
 
 ## Conformal thresholds
 
