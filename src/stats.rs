@@ -148,6 +148,14 @@ pub struct PermutationResult {
 /// `statistic` computes the test statistic from paired score vectors.
 /// See [`BootstrapResult::p_value`] for how the p-value is computed and why it
 /// is unreliable for small samples.
+///
+/// The bias correction `z0` is `Phi^-1` of the mid-rank of the observed
+/// statistic among the resamples: replicates equal to it count one half, as in
+/// `scipy.stats.bootstrap(method="BCa")`. The textbook formula (Efron and
+/// Tibshirani 1993, ch. 14) counts only strictly smaller replicates. Both
+/// agree for continuous statistics; for discrete ones such as accuracy
+/// differences, where many replicates tie the observed value, the strict count
+/// shifts the interval downward.
 pub fn bootstrap_bca<F>(
     scores_a: &[f64],
     scores_b: &[f64],
@@ -187,9 +195,10 @@ where
 
     boot_stats.sort_by(f64::total_cmp);
 
-    // Bias correction: z0
-    let prop_less =
-        boot_stats.iter().filter(|&&s| s < observed).count() as f64 / config.n_resamples as f64;
+    // Bias correction: z0 from the mid-rank of `observed` (ties count half).
+    let below = boot_stats.iter().filter(|&&s| s < observed).count();
+    let at_or_below = boot_stats.iter().filter(|&&s| s <= observed).count();
+    let prop_less = (below + at_or_below) as f64 / (2.0 * config.n_resamples as f64);
     let z0 = normal_ppf(prop_less.clamp(1e-10, 1.0 - 1e-10));
 
     // Acceleration: jackknife estimate
@@ -554,6 +563,11 @@ pub fn bonferroni(p_values: &[f64]) -> Vec<f64> {
 }
 
 /// Cohen's d effect size (pooled standard deviation).
+///
+/// Returns 0 when either group has fewer than two values. When the pooled
+/// standard deviation is 0 (both groups constant), d diverges: the result is
+/// `+inf` or `-inf` with the sign of `mean(a) - mean(b)`, and 0 when the means
+/// are equal up to rounding.
 pub fn cohens_d(a: &[f64], b: &[f64]) -> f64 {
     assert_finite_samples(a);
     assert_finite_samples(b);
@@ -572,7 +586,15 @@ pub fn cohens_d(a: &[f64], b: &[f64]) -> f64 {
     let pooled_sd = (((n_a - 1.0) * var_a + (n_b - 1.0) * var_b) / (n_a + n_b - 2.0)).sqrt();
 
     if pooled_sd < 1e-15 {
-        return 0.0;
+        // Constant groups: perfectly separated unless the means agree. The
+        // relative tolerance absorbs rounding in the two means.
+        let diff = mean_a - mean_b;
+        let scale = mean_a.abs().max(mean_b.abs()).max(1.0);
+        return if diff.abs() <= 1e-12 * scale {
+            0.0
+        } else {
+            f64::INFINITY.copysign(diff)
+        };
     }
 
     (mean_a - mean_b) / pooled_sd
@@ -1144,6 +1166,29 @@ mod tests {
     }
 
     #[test]
+    fn bootstrap_bca_counts_tied_replicates_as_half() {
+        // Discrete statistic: 6 ones and 14 zeros, so about 19% of mean
+        // resamples equal the observed 0.3. scipy.stats.bootstrap(
+        // method="BCa", n_resamples=20000) gives (0.15, 0.55); counting only
+        // strictly smaller replicates for z0 gave (0.10, 0.45).
+        let mut a = vec![1.0; 6];
+        a.extend(std::iter::repeat_n(0.0, 14));
+        let b = vec![0.0; 20];
+        let config = BootstrapConfig {
+            n_resamples: 20_000,
+            alpha: 0.05,
+            seed: Some(1),
+        };
+        let r = bootstrap_bca(&a, &b, mean_diff, config);
+        assert!(
+            (r.lower - 0.15).abs() < 1e-9 && (r.upper - 0.55).abs() < 1e-9,
+            "BCa = ({}, {}), scipy (0.15, 0.55)",
+            r.lower,
+            r.upper
+        );
+    }
+
+    #[test]
     fn test_wilcoxon_identical() {
         let a = [1.0, 2.0, 3.0, 4.0, 5.0];
         let b = [1.0, 2.0, 3.0, 4.0, 5.0];
@@ -1297,6 +1342,18 @@ mod tests {
         let b = [0.0, 1.0, 2.0, 3.0, 4.0];
         let d = cohens_d(&a, &b);
         assert!(d > 0.8, "d = {d}");
+    }
+
+    #[test]
+    fn cohens_d_constant_groups_diverge_with_sign_of_mean_difference() {
+        // d = (mean_a - mean_b) / s_pooled with s_pooled = 0: perfectly
+        // separated groups are an unbounded effect, not "no effect".
+        assert_eq!(cohens_d(&[2.0, 2.0], &[1.0, 1.0]), f64::INFINITY);
+        assert_eq!(cohens_d(&[1.0, 1.0], &[2.0, 2.0]), f64::NEG_INFINITY);
+        // Equal constants stay 0, including means that differ only by rounding
+        // (0.1 + 0.1 + 0.1 summed then divided by 3 is not exactly 0.1).
+        assert_eq!(cohens_d(&[3.0, 3.0], &[3.0, 3.0, 3.0]), 0.0);
+        assert_eq!(cohens_d(&[0.1, 0.1, 0.1], &[0.1, 0.1]), 0.0);
     }
 
     #[test]

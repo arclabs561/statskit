@@ -4,6 +4,20 @@ All notable changes to this project are documented here. Format based on [Keep a
 
 ## [Unreleased]
 
+### Changed
+
+- Behaviour change: `bootstrap_bca` computes the bias correction `z0` from the
+  mid-rank of the observed statistic, counting resamples equal to it as one
+  half, as `scipy.stats.bootstrap(method="BCa")` does. It counted only
+  strictly smaller resamples (the Efron and Tibshirani textbook formula),
+  which shifted intervals downward for discrete statistics: 6 ones and 14
+  zeros now give (0.15, 0.55), matching scipy, instead of (0.10, 0.45).
+  Continuous statistics are unaffected.
+- Behaviour change: `cohens_d` returns `+inf` or `-inf` (the sign of
+  `mean(a) - mean(b)`) when both groups are constant with different means.
+  It returned 0, which reads as no effect for perfectly separated groups.
+  Equal constant groups still return 0.
+
 ## [0.3.1] - 2026-11-01
 
 ### Changed
