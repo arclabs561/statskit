@@ -11,7 +11,7 @@ Statistical metrics and tests.
 
 ```toml
 [dependencies]
-statskit = "0.3.1"
+statskit = "0.4"
 ```
 
 ```rust
