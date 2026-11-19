@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 /// Averaging strategy for multi-class metrics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Average {
@@ -70,38 +72,40 @@ pub fn confusion_matrix(y_true: &[usize], y_pred: &[usize], n_classes: usize) ->
     cm
 }
 
-fn per_class_tp_fp_fn(cm: &[Vec<u64>], n_classes: usize) -> Vec<(u64, u64, u64)> {
-    let mut result = vec![(0u64, 0u64, 0u64); n_classes];
-    for c in 0..n_classes {
-        let tp = cm[c][c];
-        let fp: u64 = (0..n_classes)
-            .map(|r| if r != c { cm[r][c] } else { 0 })
-            .sum();
-        let fn_: u64 = (0..n_classes)
-            .map(|p| if p != c { cm[c][p] } else { 0 })
-            .sum();
-        result[c] = (tp, fp, fn_);
-    }
-    result
+#[derive(Clone, Copy, Default)]
+struct ClassCounts {
+    tp: u64,
+    fp: u64,
+    missed: u64,
 }
 
-fn support_per_class(cm: &[Vec<u64>], n_classes: usize) -> Vec<usize> {
-    (0..n_classes)
-        .map(|c| cm[c].iter().sum::<u64>() as usize)
-        .collect()
+impl ClassCounts {
+    fn support(self) -> u64 {
+        self.tp + self.missed
+    }
+
+    fn predicted(self) -> u64 {
+        self.tp + self.fp
+    }
+}
+
+fn observed_classes(y_true: &[usize], y_pred: &[usize]) -> BTreeMap<usize, ClassCounts> {
+    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
+    let mut classes = BTreeMap::<usize, ClassCounts>::new();
+    for (&actual, &predicted) in y_true.iter().zip(y_pred) {
+        if actual == predicted {
+            classes.entry(actual).or_default().tp += 1;
+        } else {
+            classes.entry(actual).or_default().missed += 1;
+            classes.entry(predicted).or_default().fp += 1;
+        }
+    }
+    classes
 }
 
 /// Precision with the given averaging strategy.
 pub fn precision(y_true: &[usize], y_pred: &[usize], average: Average) -> f64 {
-    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
-    if y_true.is_empty() {
-        return 0.0;
-    }
-    let n_classes = n_classes_from(y_true, y_pred);
-    let cm = confusion_matrix(y_true, y_pred, n_classes);
-    let stats = per_class_tp_fp_fn(&cm, n_classes);
-    let supports = support_per_class(&cm, n_classes);
-    compute_averaged(&stats, &supports, average, |tp, fp, _fn| {
+    compute_averaged(y_true, y_pred, average, |tp, fp, _fn| {
         if tp + fp == 0 {
             0.0
         } else {
@@ -112,15 +116,7 @@ pub fn precision(y_true: &[usize], y_pred: &[usize], average: Average) -> f64 {
 
 /// Recall with the given averaging strategy.
 pub fn recall(y_true: &[usize], y_pred: &[usize], average: Average) -> f64 {
-    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
-    if y_true.is_empty() {
-        return 0.0;
-    }
-    let n_classes = n_classes_from(y_true, y_pred);
-    let cm = confusion_matrix(y_true, y_pred, n_classes);
-    let stats = per_class_tp_fp_fn(&cm, n_classes);
-    let supports = support_per_class(&cm, n_classes);
-    compute_averaged(&stats, &supports, average, |tp, _fp, fn_| {
+    compute_averaged(y_true, y_pred, average, |tp, _fp, fn_| {
         if tp + fn_ == 0 {
             0.0
         } else {
@@ -136,16 +132,8 @@ pub fn f1(y_true: &[usize], y_pred: &[usize], average: Average) -> f64 {
 
 /// F-beta score. `beta > 1` weights recall higher; `beta < 1` weights precision higher.
 pub fn fbeta(y_true: &[usize], y_pred: &[usize], beta: f64, average: Average) -> f64 {
-    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
-    if y_true.is_empty() {
-        return 0.0;
-    }
-    let n_classes = n_classes_from(y_true, y_pred);
-    let cm = confusion_matrix(y_true, y_pred, n_classes);
-    let stats = per_class_tp_fp_fn(&cm, n_classes);
-    let supports = support_per_class(&cm, n_classes);
     let beta2 = beta * beta;
-    compute_averaged(&stats, &supports, average, |tp, fp, fn_| {
+    compute_averaged(y_true, y_pred, average, |tp, fp, fn_| {
         let num = (1.0 + beta2) * tp as f64;
         let den = (1.0 + beta2) * tp as f64 + beta2 * fn_ as f64 + fp as f64;
         if den == 0.0 { 0.0 } else { num / den }
@@ -170,33 +158,20 @@ pub fn accuracy(y_true: &[usize], y_pred: &[usize]) -> f64 {
 ///
 /// Returns 0.0 when any denominator term is zero.
 pub fn mcc(y_true: &[usize], y_pred: &[usize]) -> f64 {
-    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
-    if y_true.is_empty() {
-        return 0.0;
-    }
-    let n_classes = n_classes_from(y_true, y_pred);
-    let cm = confusion_matrix(y_true, y_pred, n_classes);
+    let classes = observed_classes(y_true, y_pred);
     let n = y_true.len() as f64;
-
-    // Gorodkin (2004) multiclass MCC:
-    // MCC = (n * sum_k(cm[k][k]) - sum_k(sum_i(cm[k][i]) * sum_i(cm[i][k])))
-    //     / sqrt((n^2 - sum_k(sum_i(cm[i][k])^2)) * (n^2 - sum_k(sum_i(cm[k][i])^2)))
-
-    let trace: f64 = (0..n_classes).map(|k| cm[k][k] as f64).sum();
-
-    // p_k = sum over rows of column k (predicted as k)
-    let p: Vec<f64> = (0..n_classes)
-        .map(|k| (0..n_classes).map(|i| cm[i][k] as f64).sum())
-        .collect();
-
-    // t_k = sum over columns of row k (true class k)
-    let t: Vec<f64> = (0..n_classes)
-        .map(|k| (0..n_classes).map(|i| cm[k][i] as f64).sum())
-        .collect();
-
-    let pt_sum: f64 = (0..n_classes).map(|k| p[k] * t[k]).sum();
-    let p2_sum: f64 = p.iter().map(|x| x * x).sum::<f64>();
-    let t2_sum: f64 = t.iter().map(|x| x * x).sum::<f64>();
+    let mut trace = 0.0;
+    let mut pt_sum = 0.0;
+    let mut p2_sum = 0.0;
+    let mut t2_sum = 0.0;
+    for counts in classes.values() {
+        let predicted = counts.predicted() as f64;
+        let actual = counts.support() as f64;
+        trace += counts.tp as f64;
+        pt_sum += predicted * actual;
+        p2_sum += predicted * predicted;
+        t2_sum += actual * actual;
+    }
 
     let numerator = n * trace - pt_sum;
     let denom_a = n * n - p2_sum;
@@ -318,13 +293,16 @@ pub fn classification_report(
     n_classes: usize,
 ) -> ClassificationReport {
     assert!(n_classes > 0, "n_classes must be positive");
-    let cm = confusion_matrix(y_true, y_pred, n_classes);
-    let stats = per_class_tp_fp_fn(&cm, n_classes);
-    let supports = support_per_class(&cm, n_classes);
+    let classes = observed_classes(y_true, y_pred);
+    assert!(
+        classes.keys().next_back().is_none_or(|&c| c < n_classes),
+        "label out of range"
+    );
 
     let per_class: Vec<PerClassMetrics> = (0..n_classes)
         .map(|c| {
-            let (tp, fp, fn_) = stats[c];
+            let counts = classes.get(&c).copied().unwrap_or_default();
+            let (tp, fp, fn_) = (counts.tp, counts.fp, counts.missed);
             let p = if tp + fp == 0 {
                 0.0
             } else {
@@ -344,13 +322,13 @@ pub fn classification_report(
                 precision: p,
                 recall: r,
                 f1: f,
-                support: supports[c],
+                support: counts.support() as usize,
             }
         })
         .collect();
 
     let acc = accuracy(y_true, y_pred);
-    let total_support: usize = supports.iter().sum();
+    let total_support = y_true.len();
 
     let macro_avg = PerClassMetrics {
         precision: per_class.iter().map(|m| m.precision).sum::<f64>() / n_classes as f64,
@@ -424,19 +402,17 @@ pub fn log_loss(y_true: &[usize], y_prob: &[f64]) -> f64 {
 /// in `y_true`. Classes that occur only in `y_pred` have no recall and are
 /// not averaged (matching scikit-learn's `balanced_accuracy_score`).
 pub fn balanced_accuracy(y_true: &[usize], y_pred: &[usize]) -> f64 {
-    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
-    if y_true.is_empty() {
+    let classes = observed_classes(y_true, y_pred);
+    let mut recalls = 0.0;
+    let mut present = 0usize;
+    for counts in classes.values().filter(|c| c.support() > 0) {
+        recalls += counts.tp as f64 / counts.support() as f64;
+        present += 1;
+    }
+    if present == 0 {
         return 0.0;
     }
-    let n_classes = n_classes_from(y_true, y_pred);
-    let cm = confusion_matrix(y_true, y_pred, n_classes);
-    let stats = per_class_tp_fp_fn(&cm, n_classes);
-    let recalls: Vec<f64> = stats
-        .iter()
-        .filter(|&&(tp, _fp, fn_)| tp + fn_ > 0)
-        .map(|&(tp, _fp, fn_)| tp as f64 / (tp + fn_) as f64)
-        .collect();
-    recalls.iter().sum::<f64>() / recalls.len() as f64
+    recalls / present as f64
 }
 
 /// Specificity (true negative rate) for binary classification.
@@ -465,24 +441,15 @@ pub fn specificity(y_true: &[usize], y_pred: &[usize]) -> f64 {
 /// Cohen's kappa coefficient. Measures agreement corrected for chance.
 /// Range: -1 to 1. 1 = perfect, 0 = chance, negative = worse than chance.
 pub fn cohen_kappa(y_true: &[usize], y_pred: &[usize]) -> f64 {
-    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
-    if y_true.is_empty() {
+    let classes = observed_classes(y_true, y_pred);
+    if classes.is_empty() {
         return 0.0;
     }
-    let n_classes = n_classes_from(y_true, y_pred);
-    let cm = confusion_matrix(y_true, y_pred, n_classes);
     let n = y_true.len() as f64;
-
-    // Observed agreement
-    let p_o: f64 = (0..n_classes).map(|k| cm[k][k] as f64).sum::<f64>() / n;
-
-    // Expected agreement by chance
-    let p_e: f64 = (0..n_classes)
-        .map(|k| {
-            let row_sum: f64 = cm[k].iter().sum::<u64>() as f64;
-            let col_sum: f64 = (0..n_classes).map(|r| cm[r][k] as f64).sum();
-            (row_sum * col_sum) / (n * n)
-        })
+    let p_o = classes.values().map(|c| c.tp as f64).sum::<f64>() / n;
+    let p_e: f64 = classes
+        .values()
+        .map(|c| (c.support() as f64 * c.predicted() as f64) / (n * n))
         .sum();
 
     if (1.0 - p_e).abs() < 1e-15 {
@@ -503,15 +470,7 @@ pub fn hamming_loss(y_true: &[usize], y_pred: &[usize]) -> f64 {
 
 /// Jaccard similarity coefficient (IoU) with the given averaging strategy.
 pub fn jaccard_score(y_true: &[usize], y_pred: &[usize], average: Average) -> f64 {
-    assert_eq!(y_true.len(), y_pred.len(), "length mismatch");
-    if y_true.is_empty() {
-        return 0.0;
-    }
-    let n_classes = n_classes_from(y_true, y_pred);
-    let cm = confusion_matrix(y_true, y_pred, n_classes);
-    let stats = per_class_tp_fp_fn(&cm, n_classes);
-    let supports = support_per_class(&cm, n_classes);
-    compute_averaged(&stats, &supports, average, |tp, fp, fn_| {
+    compute_averaged(y_true, y_pred, average, |tp, fp, fn_| {
         let denom = tp + fp + fn_;
         if denom == 0 {
             0.0
@@ -521,51 +480,35 @@ pub fn jaccard_score(y_true: &[usize], y_pred: &[usize], average: Average) -> f6
     })
 }
 
-fn n_classes_from(y_true: &[usize], y_pred: &[usize]) -> usize {
-    let max_true = y_true.iter().copied().max().unwrap_or(0);
-    let max_pred = y_pred.iter().copied().max().unwrap_or(0);
-    max_true.max(max_pred) + 1
-}
-
 fn compute_averaged(
-    stats: &[(u64, u64, u64)],
-    supports: &[usize],
+    y_true: &[usize],
+    y_pred: &[usize],
     average: Average,
     metric_fn: impl Fn(u64, u64, u64) -> f64,
 ) -> f64 {
+    let classes = observed_classes(y_true, y_pred);
+    if classes.is_empty() {
+        return 0.0;
+    }
     match average {
         Average::Micro => {
-            let (total_tp, total_fp, total_fn) = stats
-                .iter()
-                .fold((0u64, 0u64, 0u64), |(a, b, c), &(tp, fp, fn_)| {
-                    (a + tp, b + fp, c + fn_)
-                });
-            metric_fn(total_tp, total_fp, total_fn)
+            let correct = classes.values().map(|c| c.tp).sum();
+            let incorrect = y_true.len() as u64 - correct;
+            metric_fn(correct, incorrect, incorrect)
         }
         Average::Macro => {
-            // Average over labels that occur in y_true or y_pred; a label id
-            // below the maximum that never occurs is not a class.
-            let present: Vec<f64> = stats
-                .iter()
-                .filter(|&&(tp, fp, fn_)| tp + fp + fn_ > 0)
-                .map(|&(tp, fp, fn_)| metric_fn(tp, fp, fn_))
-                .collect();
-            if present.is_empty() {
-                return 0.0;
-            }
-            present.iter().sum::<f64>() / present.len() as f64
+            let total: f64 = classes
+                .values()
+                .map(|c| metric_fn(c.tp, c.fp, c.missed))
+                .sum();
+            total / classes.len() as f64
         }
         Average::Weighted => {
-            let total_support: usize = supports.iter().sum();
-            if total_support == 0 {
-                return 0.0;
-            }
-            let weighted: f64 = stats
-                .iter()
-                .zip(supports.iter())
-                .map(|(&(tp, fp, fn_), &s)| metric_fn(tp, fp, fn_) * s as f64)
+            let total: f64 = classes
+                .values()
+                .map(|c| metric_fn(c.tp, c.fp, c.missed) * c.support() as f64)
                 .sum();
-            weighted / total_support as f64
+            total / y_true.len() as f64
         }
     }
 }
@@ -918,6 +861,38 @@ mod tests {
         // per-class precision {1, 0, 1} -> 2/3.
         let p = precision(&[0usize, 2, 2], &[0usize, 2, 1], Average::Macro);
         assert!((p - 2.0 / 3.0).abs() < 1e-12, "macro precision = {p}");
+    }
+
+    #[test]
+    fn aggregate_metrics_accept_the_full_label_range() {
+        let dense_true = [0, 0, 1, 2];
+        let dense_pred = [0, 1, 1, 3];
+        let labels = [usize::MAX, 8, 0, 42];
+        let sparse_true = dense_true.map(|i| labels[i]);
+        let sparse_pred = dense_pred.map(|i| labels[i]);
+        for average in [Average::Micro, Average::Macro, Average::Weighted] {
+            for metric in [precision, recall, f1, jaccard_score] {
+                let expected = metric(&dense_true, &dense_pred, average);
+                let actual = metric(&sparse_true, &sparse_pred, average);
+                assert!((actual - expected).abs() < 1e-12);
+            }
+            let expected = fbeta(&dense_true, &dense_pred, 2.0, average);
+            let actual = fbeta(&sparse_true, &sparse_pred, 2.0, average);
+            assert!((actual - expected).abs() < 1e-12);
+        }
+        assert!((mcc(&sparse_true, &sparse_pred) - 0.4).abs() < 1e-12);
+        assert!((cohen_kappa(&sparse_true, &sparse_pred) - 1.0 / 3.0).abs() < 1e-12);
+        assert!((balanced_accuracy(&sparse_true, &sparse_pred) - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn report_includes_declared_but_unobserved_classes() {
+        let report = classification_report(&[0, 2], &[0, 2], 4);
+        assert_eq!(report.per_class.len(), 4);
+        assert_eq!(report.per_class[1].support, 0);
+        assert_eq!(report.per_class[3].support, 0);
+        assert_eq!(report.macro_avg.f1, 0.5);
+        assert_eq!(report.weighted_avg.f1, 1.0);
     }
 
     #[test]
