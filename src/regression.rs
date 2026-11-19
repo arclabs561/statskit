@@ -51,6 +51,10 @@ pub fn r_squared(y_true: &[f64], y_pred: &[f64]) -> f64 {
     if y_true.is_empty() {
         return 0.0;
     }
+    // Test constancy before rounding the mean or squaring a tiny residual.
+    if y_true[0].is_finite() && y_true.iter().all(|&value| value == y_true[0]) {
+        return if y_true == y_pred { 1.0 } else { 0.0 };
+    }
     let mean_y: f64 = y_true.iter().sum::<f64>() / y_true.len() as f64;
     #[cfg(feature = "simd")]
     let ss_res: f64 = innr::dense_f64::l2_distance_squared_f64(y_true, y_pred);
@@ -112,6 +116,16 @@ mod tests {
         let y_pred = [mean_val; 5];
         let r2 = r_squared(&y_true, &y_pred);
         assert!(r2.abs() < 1e-10, "expected 0.0, got {r2}");
+    }
+
+    #[test]
+    fn constant_target_score_does_not_depend_on_rounded_sums() {
+        let target = [0.1; 3];
+        assert_eq!(r_squared(&target, &target), 1.0);
+        assert_eq!(r_squared(&target, &[0.0; 3]), 0.0);
+
+        // Squaring this nonzero prediction error underflows.
+        assert_eq!(r_squared(&[1e-200; 3], &[0.0; 3]), 0.0);
     }
 
     #[test]
