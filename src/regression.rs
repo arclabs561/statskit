@@ -51,6 +51,10 @@ pub fn r_squared(y_true: &[f64], y_pred: &[f64]) -> f64 {
     if y_true.is_empty() {
         return 0.0;
     }
+    // Test constancy before rounding the mean or squaring a tiny residual.
+    if y_true[0].is_finite() && y_true.iter().all(|&value| value == y_true[0]) {
+        return if y_true == y_pred { 1.0 } else { 0.0 };
+    }
     let mean_y: f64 = y_true.iter().sum::<f64>() / y_true.len() as f64;
     #[cfg(feature = "simd")]
     let ss_res: f64 = innr::dense_f64::l2_distance_squared_f64(y_true, y_pred);
