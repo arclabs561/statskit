@@ -115,6 +115,16 @@ mod tests {
     }
 
     #[test]
+    fn constant_target_score_does_not_depend_on_rounded_sums() {
+        let target = [0.1; 3];
+        assert_eq!(r_squared(&target, &target), 1.0);
+        assert_eq!(r_squared(&target, &[0.0; 3]), 0.0);
+
+        // Squaring this nonzero prediction error underflows.
+        assert_eq!(r_squared(&[1e-200; 3], &[0.0; 3]), 0.0);
+    }
+
+    #[test]
     fn r_squared_constant_target_distinguishes_perfect_prediction() {
         let y_true = [3.0, 3.0, 3.0];
 
