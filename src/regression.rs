@@ -51,6 +51,10 @@ pub fn r_squared(y_true: &[f64], y_pred: &[f64]) -> f64 {
     if y_true.is_empty() {
         return 0.0;
     }
+    // Test constancy before rounding the mean or squaring a tiny residual.
+    if y_true[0].is_finite() && y_true.iter().all(|&value| value == y_true[0]) {
+        return if y_true == y_pred { 1.0 } else { 0.0 };
+    }
     let mean_y: f64 = y_true.iter().sum::<f64>() / y_true.len() as f64;
     #[cfg(feature = "simd")]
     let ss_res: f64 = innr::dense_f64::l2_distance_squared_f64(y_true, y_pred);
@@ -61,6 +65,24 @@ pub fn r_squared(y_true: &[f64], y_pred: &[f64]) -> f64 {
         .map(|(&t, &p)| (t - p).powi(2))
         .sum();
     let ss_tot: f64 = y_true.iter().map(|&t| (t - mean_y).powi(2)).sum();
+    if (!ss_tot.is_normal() || !ss_res.is_finite() || ss_res < f64::MIN_POSITIVE)
+        && y_true.iter().chain(y_pred).all(|x| x.is_finite())
+    {
+        if y_true == y_pred {
+            return 1.0;
+        }
+        // A common scale cancels in R². Keep very small or large squared
+        // deviations representable even when the direct reduction is not.
+        let scale = y_true.iter().map(|x| x.abs()).fold(0.0, f64::max);
+        let mean = y_true.iter().map(|x| x / scale).sum::<f64>() / y_true.len() as f64;
+        let total: f64 = y_true.iter().map(|x| (x / scale - mean).powi(2)).sum();
+        let residual: f64 = y_true
+            .iter()
+            .zip(y_pred)
+            .map(|(t, p)| (t / scale - p / scale).powi(2))
+            .sum();
+        return 1.0 - residual / total;
+    }
     if ss_tot == 0.0 {
         return if ss_res == 0.0 { 1.0 } else { 0.0 };
     }
@@ -112,6 +134,23 @@ mod tests {
         let y_pred = [mean_val; 5];
         let r2 = r_squared(&y_true, &y_pred);
         assert!(r2.abs() < 1e-10, "expected 0.0, got {r2}");
+    }
+
+    #[test]
+    fn constant_target_score_does_not_depend_on_rounded_sums() {
+        let target = [0.1; 3];
+        assert_eq!(r_squared(&target, &target), 1.0);
+        assert_eq!(r_squared(&target, &[0.0; 3]), 0.0);
+
+        // Squaring this nonzero prediction error underflows.
+        assert_eq!(r_squared(&[1e-200; 3], &[0.0; 3]), 0.0);
+    }
+
+    #[test]
+    fn r_squared_is_invariant_to_extreme_units() {
+        for scale in [1e-200, 1.0, 1e200] {
+            assert_eq!(r_squared(&[0.0, scale], &[0.0, 0.0]), -1.0);
+        }
     }
 
     #[test]
