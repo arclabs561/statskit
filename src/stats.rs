@@ -177,7 +177,7 @@ where
 
     let mut rng = match config.seed {
         Some(s) => SmallRng::seed_from_u64(s),
-        None => SmallRng::from_os_rng(),
+        None => rand::make_rng(),
     };
 
     let indices: Vec<usize> = (0..n).collect();
@@ -392,7 +392,7 @@ where
 
     let mut rng = match seed {
         Some(s) => SmallRng::seed_from_u64(s),
-        None => SmallRng::from_os_rng(),
+        None => rand::make_rng(),
     };
 
     let mut count_extreme = 0usize;
@@ -445,7 +445,7 @@ pub fn aso(scores_a: &[f64], scores_b: &[f64], n_bootstrap: usize, seed: Option<
 
     let mut rng = match seed {
         Some(s) => SmallRng::seed_from_u64(s),
-        None => SmallRng::from_os_rng(),
+        None => rand::make_rng(),
     };
 
     let e_w2 = compute_epsilon(scores_a, scores_b);

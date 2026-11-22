@@ -2,7 +2,7 @@
 //! 95% interval must contain the true parameter about 95% of the time.
 
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use statskit::{BootstrapConfig, bootstrap_bca, mean_diff};
 
 #[test]
