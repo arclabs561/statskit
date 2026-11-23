@@ -55,38 +55,51 @@ pub fn r_squared(y_true: &[f64], y_pred: &[f64]) -> f64 {
     if y_true[0].is_finite() && y_true.iter().all(|&value| value == y_true[0]) {
         return if y_true == y_pred { 1.0 } else { 0.0 };
     }
-    let mean_y: f64 = y_true.iter().sum::<f64>() / y_true.len() as f64;
-    #[cfg(feature = "simd")]
-    let ss_res: f64 = innr::dense_f64::l2_distance_squared_f64(y_true, y_pred);
-    #[cfg(not(feature = "simd"))]
-    let ss_res: f64 = y_true
-        .iter()
-        .zip(y_pred.iter())
-        .map(|(&t, &p)| (t - p).powi(2))
-        .sum();
-    let ss_tot: f64 = y_true.iter().map(|&t| (t - mean_y).powi(2)).sum();
-    if (!ss_tot.is_normal() || !ss_res.is_finite() || ss_res < f64::MIN_POSITIVE)
-        && y_true.iter().chain(y_pred).all(|x| x.is_finite())
-    {
-        if y_true == y_pred {
-            return 1.0;
-        }
-        // A common scale cancels in R². Keep very small or large squared
-        // deviations representable even when the direct reduction is not.
-        let scale = y_true.iter().map(|x| x.abs()).fold(0.0, f64::max);
-        let mean = y_true.iter().map(|x| x / scale).sum::<f64>() / y_true.len() as f64;
-        let total: f64 = y_true.iter().map(|x| (x / scale - mean).powi(2)).sum();
-        let residual: f64 = y_true
+    if !y_true.iter().chain(y_pred).all(|x| x.is_finite()) {
+        let mean = y_true.iter().sum::<f64>() / y_true.len() as f64;
+        let total = y_true.iter().map(|x| (x - mean).powi(2)).sum::<f64>();
+        let residual = y_true
             .iter()
             .zip(y_pred)
-            .map(|(t, p)| (t / scale - p / scale).powi(2))
-            .sum();
-        return 1.0 - residual / total;
+            .map(|(t, p)| (t - p).powi(2))
+            .sum::<f64>();
+        return if total == 0.0 {
+            0.0
+        } else {
+            1.0 - residual / total
+        };
     }
-    if ss_tot == 0.0 {
-        return if ss_res == 0.0 { 1.0 } else { 0.0 };
-    }
-    1.0 - ss_res / ss_tot
+    // A power-of-two unit preserves neighboring representable observations.
+    // Center relative to the first observation before taking the mean, so a
+    // mean between adjacent floats remains representable in relative units.
+    let max = y_true.iter().map(|x| x.abs()).fold(0.0, f64::max);
+    let scale = f64::from_bits(max.to_bits() & 0x7ff0_0000_0000_0000).max(f64::MIN_POSITIVE);
+    let origin = y_true[0] / scale;
+    let offset = |x: f64| x / scale - origin;
+    let mean = y_true.iter().map(|&x| offset(x)).sum::<f64>() / y_true.len() as f64;
+    let total = y_true
+        .iter()
+        .map(|&x| (offset(x) - mean).powi(2))
+        .sum::<f64>();
+    let ratio: f64 = y_true
+        .iter()
+        .zip(y_pred)
+        .map(|(&t, &p)| {
+            let delta = t - p;
+            let scaled = if delta.is_finite() {
+                delta / scale
+            } else {
+                t / scale - p / scale
+            };
+            let square = scaled * scaled;
+            if square.is_finite() {
+                square / total
+            } else {
+                (scaled / total.sqrt()).powi(2)
+            }
+        })
+        .sum();
+    1.0 - ratio
 }
 
 #[cfg(test)]
@@ -144,6 +157,14 @@ mod tests {
 
         // Squaring this nonzero prediction error underflows.
         assert_eq!(r_squared(&[1e-200; 3], &[0.0; 3]), 0.0);
+    }
+
+    #[test]
+    fn adjacent_observations_keep_their_midpoint_in_any_units() {
+        for x in [2f64.powi(-600), 1.0, 2f64.powi(600)] {
+            let z = f64::from_bits(x.to_bits() - 1);
+            assert!((r_squared(&[z, x], &[x, x]) + 1.0).abs() < 1e-14);
+        }
     }
 
     #[test]
