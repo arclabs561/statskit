@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format based on [Keep a
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-22
+
+### Fixed
+
+- R-squared preserves finite ratios when extreme units cause sums of squares to underflow or overflow. Constant targets retain the exact-match convention.
+
 ## [0.4.0] - 2026-11-04
 
 ### Changed
